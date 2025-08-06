@@ -1,0 +1,20 @@
+version: '3'
+
+tasks:
+  build-http:
+    dir: cmd/http
+    cmds:
+      - go build -o ../../http_service ./...
+    # sources:
+    #   - .
+    # generates:
+    #   - ../../http_service
+
+  run-http:
+    cmds:
+      - ./http_service
+
+  build-and-run-http:
+    cmds:
+      - task: build-http
+      - task: run-http
