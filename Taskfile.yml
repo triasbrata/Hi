@@ -13,7 +13,7 @@ tasks:
   run-http:
     cmds:
       - ./http_service
-
+      - defer: rm ./http_service
   build-and-run-http:
     cmds:
       - task: build-http
