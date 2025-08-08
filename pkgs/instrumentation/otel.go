@@ -6,6 +6,7 @@ import (
 	"crypto/x509"
 	"fmt"
 	"log/slog"
+	"reflect"
 
 	"github.com/go-logr/logr"
 	"github.com/triasbrata/adios/internals/config"
@@ -26,14 +27,26 @@ import (
 
 type Params struct {
 	fx.In
-	Lc     fx.Lifecycle
-	Cfg    *config.Config
-	Logger *slog.Logger
+	Lc         fx.Lifecycle
+	Cfg        *config.Config
+	Logger     *slog.Logger
+	ResourceIn []InstrumentationIn `group:"otelattrs"`
 }
 type InstrumentationResult struct {
 	fx.Out
 	TraceProv *trace.TracerProvider
 	MeterProv *metric.MeterProvider
+}
+type InstrumentationIn interface {
+	Resource() []attribute.KeyValue
+}
+
+// The function type
+type InstrumentationInFunc func() []attribute.KeyValue
+
+// Implement the interface
+func (f InstrumentationInFunc) Resource() []attribute.KeyValue {
+	return f()
 }
 
 // Build x509.CertPool if caFile is present, or nil if not.
@@ -48,37 +61,78 @@ func buildCertPool(caFile []byte) (*x509.CertPool, error) {
 	return certPool, nil
 }
 
-func OtelModule(attrs ...attribute.KeyValue) fx.Option {
-	return fx.Module("instrumentation/otel", fx.Provide(NewInstrumentation(attrs...)))
+func OtelModule(factory ...interface{}) fx.Option {
+	resourceAttributes := []attribute.KeyValue{}
+	providers := []fx.Option{}
+	for _, fc := range factory {
+		switch arg := fc.(type) {
+		case attribute.KeyValue:
+			resourceAttributes = append(resourceAttributes, arg)
+		default:
+			rfc := reflect.TypeOf(fc)
+			if rfc.Kind() != reflect.Func {
+				continue
+			}
+			if rfc.NumOut() == 0 || rfc.NumOut() > 1 {
+				panic("otel factory cant be out empty or more than 1")
+			}
+			if !rfc.Out(0).Implements(reflect.TypeOf((*InstrumentationIn)(nil)).Elem()) {
+				panic(fmt.Sprintf("otel factory must have output %T ", new(InstrumentationIn)))
+			}
+			providers = append(providers,
+				fx.Provide(
+					fx.Private,
+					fx.Annotate(fc,
+						fx.ResultTags(`group:"otelattrs"`),
+					),
+				),
+			)
+		}
+	}
+
+	providers = append(providers,
+		fx.Supply(
+			fx.Private,
+			fx.Annotate(
+				InstrumentationInFunc(func() []attribute.KeyValue {
+					return resourceAttributes
+				}),
+				fx.As(new(InstrumentationIn)),      // cast value to the interface
+				fx.ResultTags(`group:"otelattrs"`), // put it into the group
+			),
+		),
+	)
+	providers = append(providers, fx.Provide(NewInstrumentation))
+	return fx.Module("instrumentation/otel", providers...)
 }
 
-func NewInstrumentation(attrs ...attribute.KeyValue) func(p Params) (InstrumentationResult, error) {
-	return func(p Params) (InstrumentationResult, error) {
-		otel.SetLogger(logr.FromSlogHandler(p.Logger.Handler()))
-		attrs = append(attrs, semconv.ServiceName(p.Cfg.AppName))
-		res, err := resource.Merge(
-			resource.Default(),
-			resource.NewWithAttributes(semconv.SchemaURL, attrs...),
-		)
-		if err != nil {
-			return InstrumentationResult{}, fmt.Errorf("cant create otel resource because: %w", err)
-		}
-		hTracer, err := NewTracerProvider(context.Background(), p.Cfg, res)
-		if err != nil {
-			return InstrumentationResult{}, err
-		}
-		p.Lc.Append(hTracer.Hook)
-		hMeter, err := NewMeterProvider(context.Background(), p.Cfg, res)
-		if err != nil {
-			return InstrumentationResult{}, err
-		}
-		p.Lc.Append(hMeter.Hook)
-		fmt.Printf("hTracer: %+v\n", hTracer)
-		return InstrumentationResult{
-			TraceProv: hTracer.Provider,
-			MeterProv: hMeter.Provider,
-		}, nil
+func NewInstrumentation(p Params) (InstrumentationResult, error) {
+	otel.SetLogger(logr.FromSlogHandler(p.Logger.Handler()))
+	attrs := []attribute.KeyValue{semconv.ServiceName(p.Cfg.AppName)}
+	for _, res := range p.ResourceIn {
+		attrs = append(attrs, res.Resource()...)
 	}
+	res, err := resource.Merge(
+		resource.Default(),
+		resource.NewWithAttributes(semconv.SchemaURL, attrs...),
+	)
+	if err != nil {
+		return InstrumentationResult{}, fmt.Errorf("cant create otel resource because: %w", err)
+	}
+	hTracer, err := NewTracerProvider(context.Background(), p.Cfg, res)
+	if err != nil {
+		return InstrumentationResult{}, err
+	}
+	p.Lc.Append(hTracer.Hook)
+	hMeter, err := NewMeterProvider(context.Background(), p.Cfg, res)
+	if err != nil {
+		return InstrumentationResult{}, err
+	}
+	p.Lc.Append(hMeter.Hook)
+	return InstrumentationResult{
+		TraceProv: hTracer.Provider,
+		MeterProv: hMeter.Provider,
+	}, nil
 }
 
 type HookMeterResult struct {

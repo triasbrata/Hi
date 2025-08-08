@@ -7,7 +7,7 @@ import (
 
 func LoadConfig() fx.Option {
 	return fx.Module("config",
-		fx.Provide(fx.Private, secretEnv.NewSecretFromEnv),
+		fx.Provide(secretEnv.NewSecretFromEnv),
 		fx.Provide(NewConfigEnv),
 	)
 }

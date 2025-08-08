@@ -5,10 +5,16 @@ import (
 	"os"
 
 	"go.uber.org/fx"
+	"go.uber.org/fx/fxevent"
 )
 
-func LoadLogger() fx.Option {
-	return fx.Module("bootstrap/logger",
+func LoadLoggerSlog() fx.Option {
+	return fx.Options(
+		fx.WithLogger(func(logger *slog.Logger) fxevent.Logger {
+			return &fxevent.SlogLogger{
+				Logger: logger,
+			}
+		}),
 		fx.Provide(func() *slog.Logger {
 			handler := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{})
 			logger := slog.New(handler)
