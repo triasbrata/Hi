@@ -1,0 +1,83 @@
+package impl
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+
+	"github.com/rabbitmq/amqp091-go"
+	"github.com/triasbrata/adios/pkgs/messagebroker/broker"
+	"github.com/triasbrata/adios/pkgs/messagebroker/consumer"
+	"github.com/triasbrata/adios/pkgs/messagebroker/consumer/amqp"
+	"github.com/triasbrata/adios/pkgs/messagebroker/manager"
+	implMan "github.com/triasbrata/adios/pkgs/messagebroker/manager/impl"
+	"github.com/triasbrata/adios/pkgs/messagebroker/publisher"
+)
+
+// Consumer implements broker.Broker.
+func (b *brk) Consumer(ctx context.Context, builder broker.ConBuilder) (consumer.Consumer, error) {
+	config := builder()
+	switch {
+	case config.Amqp:
+		conHolder, err := b.openConsuerAmqp(ctx, config.Amqp)
+		if err != nil {
+			return nil, err
+		}
+		return amqp.NewConsumer(conHolder), nil
+	}
+	return nil, fmt.Errorf("Consumer cant open")
+}
+
+func (b *brk) openConsuerAmqp(ctx context.Context, amqp bool) (manager.Manager[amqp091.Connection], error) {
+	man := implMan.NewManager()
+	conProps := amqp091.NewConnectionProperties()
+	conProps.SetClientConnectionName(b.cfg.amqp.name)
+	dialConf := amqp091.Config{
+		Vhost:      b.cfg.amqp.vhost,
+		Properties: conProps,
+		Locale:     b.cfg.amqp.locale,
+		ChannelMax: b.cfg.amqp.chanMax,
+		Heartbeat:  b.cfg.amqp.heartBeat,
+	}
+	con, err := amqp091.DialConfig(b.cfg.amqp.uri, dialConf)
+	if err != nil {
+		return nil, err
+	}
+
+	go b.watchConnectionAmqp(ctx, man, con, dialConf)
+	return man, nil
+}
+
+func (b *brk) watchConnectionAmqp(ctx context.Context, man manager.Manager[amqp091.Connection], con *amqp091.Connection, dialConf amqp091.Config) {
+	var err error
+	for {
+		if con.IsClosed() {
+			slog.InfoContext(ctx, fmt.Sprintf("will reopen the connection on %v", b.restartTimer),
+				slog.Any("retryCount", b.cfg.amqp.retryCounter.Load()),
+				slog.String("connectionName", b.cfg.amqp.name),
+			)
+			con, err = amqp091.DialConfig(b.cfg.amqp.uri, dialConf)
+			if err != nil {
+				slog.ErrorContext(ctx, "fail dialing up the connection",
+					slog.String("connectionName", b.cfg.amqp.name),
+					slog.Any("err", err),
+				)
+				continue
+			}
+		}
+		closeNotif := con.NotifyClose(make(chan *amqp091.Error))
+		man.SetCon(con)
+		select {
+		case <-ctx.Done():
+			return
+		case err := <-closeNotif:
+			slog.ErrorContext(ctx, "connection closed", slog.Any("err", err))
+			b.cfg.amqp.retryCounter.Add(1)
+		}
+	}
+}
+
+// Publisher implements broker.Broker.
+func (b *brk) Publisher(ctx context.Context, builder broker.PubBuilder) (publisher.Publisher, error) {
+	panic("unimplemented")
+}
