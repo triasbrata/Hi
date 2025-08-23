@@ -3,6 +3,7 @@ package amqp
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"sync"
 	"time"
@@ -21,52 +22,63 @@ type amqpStack struct {
 	handlers      []consumer.ConsumeHandler
 }
 type csmr struct {
-	man              manager.Manager[amqp091.Connection]
-	isStart          bool
+	man              manager.Manager[*amqp091.Connection]
 	restartTime      time.Duration
 	mut              sync.Mutex
 	stack            []amqpStack
 	globalMiddleware []consumer.ConsumeHandler
 	ctxPool          sync.Pool
+	chanErr          chan error
+	chanOk           chan struct{}
+}
+
+// Status implements consumer.Consumer.
+func (c *csmr) Status() (ok chan struct{}, err chan error) {
+	return c.chanOk, c.chanErr
 }
 
 // Consume implements consumer.Consumer.
-func (c *csmr) Consume(queueName string, topology consumer.ConsumerTopology, handlers ...consumer.ConsumeHandler) consumer.Consumer {
+func (c *csmr) Consume(queueName string, topology consumer.ConsumerTopology, handlers ...consumer.ConsumeHandler) consumer.ConsumerBuilder {
+	c.mut.Lock()
+	defer c.mut.Unlock()
 	if len(handlers) == 0 {
 		slog.Warn("cant register queue", slog.String("queueName", queueName))
 		return c
 	}
-	c.mut.Lock()
 	c.stack = append(c.stack, amqpStack{
 		queuName: queueName,
 		topology: topology().Amqp,
 		handlers: handlers,
 	})
-	c.mut.Unlock()
+
 	return c
 }
 
 // SimpleConsume implements consumer.Consumer.
-func (c *csmr) SimpleConsume(queueName string, handlers ...consumer.ConsumeHandler) consumer.Consumer {
+func (c *csmr) SimpleConsume(queueName string, handlers ...consumer.ConsumeHandler) consumer.ConsumerBuilder {
+	c.mut.Lock()
+	defer c.mut.Unlock()
 	if len(handlers) == 0 {
 		slog.Warn("cant register queue", slog.String("queueName", queueName))
-		c.stack = append(c.stack, amqpStack{
-			queuName: queueName,
-			topology: consumer.AmqpTopologyConsumer{},
-			handlers: handlers,
-		})
-		c.mut.Unlock()
 		return c
 	}
+	c.stack = append(c.stack, amqpStack{
+		queuName: queueName,
+		topology: consumer.AmqpTopologyConsumer{},
+		handlers: handlers,
+	})
 	return c
 }
 
 // Use implements consumer.Consumer.
-func (c *csmr) Use(handlers ...consumer.ConsumeHandler) consumer.Consumer {
+func (c *csmr) Use(handlers ...consumer.ConsumeHandler) consumer.ConsumerBuilder {
+	c.mut.Lock()
+	defer c.mut.Unlock()
 	if len(handlers) == 0 {
 		slog.Warn("no global middleware was registered")
 		return c
 	}
+
 	c.globalMiddleware = append(c.globalMiddleware, c.globalMiddleware...)
 	return c
 }
@@ -77,9 +89,17 @@ func (c *csmr) Start(ctx context.Context) error {
 		defer close(chanStack)
 		for range c.man.Ready() {
 			slog.InfoContext(ctx, "create consumer topology")
+			if len(c.stack) == 0 {
+				return fmt.Errorf("no routing consumer was define")
+			}
+			select {
+			case c.chanOk <- struct{}{}:
+			default:
+			}
 			for _, stack := range c.stack {
 				chanStack <- stack
 			}
+
 		}
 		return nil
 	})
@@ -100,21 +120,28 @@ func (c *csmr) Start(ctx context.Context) error {
 				return nil
 			}
 
-			return err
+			return fmt.Errorf("err chan stack: %w", err)
 		})
 	}
-
+	err := eg.Wait()
+	if err != nil {
+		select {
+		case c.chanErr <- err:
+		default:
+		}
+		return err
+	}
 	return nil
 }
 
 func (c *csmr) startConsuming(gctx context.Context, stack amqpStack) error {
 	ch, err := c.man.GetCon().Channel()
 	if err != nil {
-		return err
+		return fmt.Errorf("error when open channel for %s: %w", stack.queuName, err)
 	}
 	err = ch.Qos(int(stack.prefetchCount), 0, false)
 	if err != nil {
-		return err
+		return fmt.Errorf("error when set qos %s: %w", stack.queuName, err)
 	}
 	del, err := ch.ConsumeWithContext(gctx,
 		stack.queuName,
@@ -125,9 +152,8 @@ func (c *csmr) startConsuming(gctx context.Context, stack amqpStack) error {
 		stack.topology.NoWait.Value(),
 		stack.topology.Args)
 	if err != nil {
-		return err
+		return fmt.Errorf("error when try to consume %s: %w", stack.queuName, err)
 	}
-
 	for msgDelivery := range del {
 		attrs := []any{
 			slog.String("msg", string(msgDelivery.Body)),
@@ -137,18 +163,18 @@ func (c *csmr) startConsuming(gctx context.Context, stack amqpStack) error {
 			ctx := c.ctxPool.Get().(*consumer.CtxConsumer)
 			var errH error
 			defer func() {
-				c.ctxPool.Put(ctx)
+				c.ctxPool.Put(ctx) // release back the context
 				if errH != nil {
 					slog.ErrorContext(gctx, "Failed when consume", append(attrs, slog.Any("err", errH))...)
 				}
-				if errH != nil && stack.topology.AutoAck.Value() && msgDelivery.Acknowledger != nil {
+				if errH != nil && !stack.topology.AutoAck.Value() && msgDelivery.Acknowledger != nil {
 					errAck := msgDelivery.Acknowledger.Reject(msgDelivery.DeliveryTag, false)
 					if errAck != nil {
 						slog.ErrorContext(gctx, "Fail to reject", append(attrs, slog.Any("err", errAck))...)
 					}
 					return
 				}
-				if stack.topology.AutoAck.Value() && msgDelivery.Acknowledger != nil {
+				if !stack.topology.AutoAck.Value() && msgDelivery.Acknowledger != nil {
 					errAck := msgDelivery.Acknowledger.Ack(msgDelivery.DeliveryTag, false)
 					if errAck != nil {
 						slog.ErrorContext(gctx, "Fail to reject", append(attrs, slog.Any("err", errAck))...)
@@ -179,7 +205,7 @@ func (c *csmr) buildTopology(gctx context.Context, stack amqpStack) (err error) 
 	var ch *amqp091.Channel
 	ch, err = c.man.GetCon().Channel()
 	if err != nil {
-		return err
+		return fmt.Errorf("error when open channel buildTopology: %w", err)
 	}
 	defer ch.Close()
 
@@ -190,7 +216,7 @@ func (c *csmr) buildTopology(gctx context.Context, stack amqpStack) (err error) 
 		stack.topology.NoWait.Value(),
 		stack.topology.Args)
 	if err != nil {
-		return err
+		return fmt.Errorf("error when QueueDeclare for %s: %w", stack.queuName, err)
 	}
 	if stack.topology.BindExchange != nil {
 		if stack.topology.BindExchange.Exchange != nil {
@@ -203,7 +229,7 @@ func (c *csmr) buildTopology(gctx context.Context, stack amqpStack) (err error) 
 				stack.topology.BindExchange.NoWait.Value(),
 				stack.topology.BindExchange.Exchange.Args)
 			if err != nil {
-				return err
+				return fmt.Errorf("error when ExchangeDeclare for %s: %w", stack.queuName, err)
 			}
 		}
 		err = ch.QueueBind(stack.queuName,
@@ -212,17 +238,21 @@ func (c *csmr) buildTopology(gctx context.Context, stack amqpStack) (err error) 
 			stack.topology.BindExchange.NoWait.Value(),
 			stack.topology.BindExchange.Args)
 		if err != nil {
-			return err
+			return fmt.Errorf("error when QueueBind for %s: %w", stack.queuName, err)
 		}
 	}
 	return nil
 }
 
-func NewConsumer(conManager manager.Manager[amqp091.Connection]) consumer.Consumer {
+func NewConsumer(conManager manager.Manager[*amqp091.Connection], restartTime time.Duration) consumer.Consumer {
 	return &csmr{
 		man:              conManager,
 		mut:              sync.Mutex{},
+		restartTime:      restartTime,
+		stack:            []amqpStack{},
 		globalMiddleware: make([]consumer.ConsumeHandler, 0),
+		chanErr:          make(chan error, 1),
+		chanOk:           make(chan struct{}, 1),
 		ctxPool: sync.Pool{
 			New: func() any {
 				return &consumer.CtxConsumer{}
