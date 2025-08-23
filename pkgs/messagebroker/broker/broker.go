@@ -2,6 +2,7 @@ package broker
 
 import (
 	"context"
+	"time"
 
 	"github.com/triasbrata/adios/pkgs/messagebroker/consumer"
 	"github.com/triasbrata/adios/pkgs/messagebroker/publisher"
@@ -9,11 +10,15 @@ import (
 
 type ConsumerConfig struct {
 	Amqp bool
+	AmqpConConfig
+}
+type AmqpConConfig struct {
+	RestartTime time.Duration
 }
 
-func WithAmqp() ConBuilder {
+func WithAmqp(config AmqpConConfig) ConBuilder {
 	return func() ConsumerConfig {
-		return ConsumerConfig{Amqp: true}
+		return ConsumerConfig{Amqp: true, AmqpConConfig: config}
 	}
 }
 

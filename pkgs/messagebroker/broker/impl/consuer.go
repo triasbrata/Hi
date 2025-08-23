@@ -23,12 +23,12 @@ func (b *brk) Consumer(ctx context.Context, builder broker.ConBuilder) (consumer
 		if err != nil {
 			return nil, err
 		}
-		return amqp.NewConsumer(conHolder), nil
+		return amqp.NewConsumer(conHolder, config.AmqpConConfig.RestartTime), nil
 	}
 	return nil, fmt.Errorf("Consumer cant open")
 }
 
-func (b *brk) openConsuerAmqp(ctx context.Context, amqp bool) (manager.Manager[amqp091.Connection], error) {
+func (b *brk) openConsuerAmqp(ctx context.Context, amqp bool) (manager.Manager[*amqp091.Connection], error) {
 	man := implMan.NewManager()
 	conProps := amqp091.NewConnectionProperties()
 	conProps.SetClientConnectionName(b.cfg.amqp.name)
@@ -41,14 +41,14 @@ func (b *brk) openConsuerAmqp(ctx context.Context, amqp bool) (manager.Manager[a
 	}
 	con, err := amqp091.DialConfig(b.cfg.amqp.uri, dialConf)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("got error when dialup: %w", err)
 	}
 
 	go b.watchConnectionAmqp(ctx, man, con, dialConf)
 	return man, nil
 }
 
-func (b *brk) watchConnectionAmqp(ctx context.Context, man manager.Manager[amqp091.Connection], con *amqp091.Connection, dialConf amqp091.Config) {
+func (b *brk) watchConnectionAmqp(ctx context.Context, man manager.Manager[*amqp091.Connection], con *amqp091.Connection, dialConf amqp091.Config) {
 	var err error
 	for {
 		if con.IsClosed() {
