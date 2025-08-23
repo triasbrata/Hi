@@ -28,9 +28,8 @@ func BootConsumerAmqp() fx.Option {
 		delivery.ModuleConsumer(),
 		fx.Invoke(func(param InvokeParam) {
 			invCtx, cancel := context.WithCancel(context.Background())
-
 			param.Lc.Append(fx.Hook{OnStart: func(ctx context.Context) error {
-				consumer, err := param.Bk.Consumer(ctx, broker.WithAmqp(broker.AmqpConConfig{
+				consumer, err := param.Bk.Consumer(invCtx, broker.WithAmqp(broker.AmqpConConfig{
 					RestartTime: param.Conf.Consumer.Amqp.RestartTime,
 				}))
 

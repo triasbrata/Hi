@@ -1,11 +1,17 @@
 package impl
 
+import (
+	"slices"
+	"time"
+)
+
 type AmqpConfigTls struct {
 }
 type AmqpConfig struct {
-	ConnectionName string
-	URI            string
-	TLS            AmqpConfigTls
+	ConnectionName       string
+	URI                  string
+	TLS                  AmqpConfigTls
+	RetryConnectionTimer time.Duration
 }
 
 func WithAmqpBroker(config AmqpConfig) brokerConfig {
@@ -14,5 +20,6 @@ func WithAmqpBroker(config AmqpConfig) brokerConfig {
 			name: config.ConnectionName,
 			uri:  config.URI,
 		}
+		brk.restartTimer = slices.Max([]time.Duration{config.RetryConnectionTimer, time.Second * 1})
 	}
 }

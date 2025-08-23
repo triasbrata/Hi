@@ -88,7 +88,7 @@ func (c *csmr) Start(ctx context.Context) error {
 	eg.Go(func() error {
 		defer close(chanStack)
 		for range c.man.Ready() {
-			slog.InfoContext(ctx, "create consumer topology")
+			slog.InfoContext(ctx, "connection ready, time to create consumer topology")
 			if len(c.stack) == 0 {
 				return fmt.Errorf("no routing consumer was define")
 			}
@@ -97,6 +97,7 @@ func (c *csmr) Start(ctx context.Context) error {
 			default:
 			}
 			for _, stack := range c.stack {
+				slog.InfoContext(ctx, "create consumer topology", slog.Any("stackQueue", stack.queuName))
 				chanStack <- stack
 			}
 
@@ -112,6 +113,9 @@ func (c *csmr) Start(ctx context.Context) error {
 				chanStack <- stack // restart topology and consumer
 				return nil
 			}
+			if err != nil {
+				return fmt.Errorf("err chan stack: %w", err)
+			}
 			err = c.startConsuming(gctx, stack)
 			if err != nil && errors.Is(err, amqp091.ErrClosed) {
 				slog.ErrorContext(gctx, "got error when define the topology", slog.Any("err", err))
@@ -119,8 +123,10 @@ func (c *csmr) Start(ctx context.Context) error {
 				chanStack <- stack // restart topology and consumer
 				return nil
 			}
-
-			return fmt.Errorf("err chan stack: %w", err)
+			if err != nil {
+				return fmt.Errorf("err chan stack: %w", err)
+			}
+			return nil
 		})
 	}
 	err := eg.Wait()

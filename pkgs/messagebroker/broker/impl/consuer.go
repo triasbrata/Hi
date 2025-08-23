@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/rabbitmq/amqp091-go"
 	"github.com/triasbrata/adios/pkgs/messagebroker/broker"
@@ -56,6 +57,8 @@ func (b *brk) watchConnectionAmqp(ctx context.Context, man manager.Manager[*amqp
 				slog.Any("retryCount", b.cfg.amqp.retryCounter.Load()),
 				slog.String("connectionName", b.cfg.amqp.name),
 			)
+			time.Sleep(b.restartTimer)
+			dialConf.Properties.SetClientConnectionName(fmt.Sprintf("%s-%v", b.cfg.amqp.name, b.cfg.amqp.retryCounter.Load()))
 			con, err = amqp091.DialConfig(b.cfg.amqp.uri, dialConf)
 			if err != nil {
 				slog.ErrorContext(ctx, "fail dialing up the connection",
@@ -69,6 +72,7 @@ func (b *brk) watchConnectionAmqp(ctx context.Context, man manager.Manager[*amqp
 		man.SetCon(con)
 		select {
 		case <-ctx.Done():
+			slog.Info("context Done")
 			return
 		case err := <-closeNotif:
 			slog.ErrorContext(ctx, "connection closed", slog.Any("err", err))
