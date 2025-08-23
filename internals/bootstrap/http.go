@@ -1,8 +1,6 @@
 package bootstrap
 
 import (
-	"fmt"
-
 	"github.com/triasbrata/adios/internals/config"
 	"github.com/triasbrata/adios/internals/delivery"
 	"github.com/triasbrata/adios/pkgs/instrumentation"
@@ -18,14 +16,16 @@ import (
 func BootHttpServer() fx.Option {
 	return fx.Options(log.LoadLoggerSlog(),
 		config.LoadConfig(),
-		instrumentation.OtelModule(func(sec secrets.Secret) instrumentation.InstrumentationIn {
-			fmt.Printf("sec: %v\n", sec)
-			return instrumentation.InstrumentationInFunc(func() []attribute.KeyValue {
-				return []attribute.KeyValue{
-					semconv.VCSChangeID(sec.GetSecretAsString("GIT_COMMIT_ID", "1234")),
-				}
-			})
-		}, semconv.VCSRepositoryName("olla")),
+		instrumentation.OtelModule(
+			func(sec secrets.Secret) instrumentation.InstrumentationIn {
+				return instrumentation.InstrumentationInFunc(func() []attribute.KeyValue {
+					return []attribute.KeyValue{
+						semconv.VCSChangeID(sec.GetSecretAsString("GIT_COMMIT_ID", "1234")),
+					}
+				})
+			},
+			semconv.VCSRepositoryName("olla"),
+		),
 		delivery.ModuleHttp(),
 		routersfx.LoadModuleRouter(),
 		http.LoadHttpServer())

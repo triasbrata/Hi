@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/triasbrata/adios/pkgs/secrets"
 )
@@ -28,6 +29,13 @@ func NewConfigEnv(secret secrets.Secret) (*Config, error) {
 			Secure:   secInst,
 			Endpoint: secret.GetSecretAsString("INS_ENDPOINT", "localhost:4317"),
 			UseGRPC:  secret.GetSecretAsBool("INS_USE_GRPC", true),
+		},
+		Consumer: ConsumerConfig{
+			Amqp: AmqpConsumerConfig{
+				ConnectionName: "consumer-test",
+				URI:            "amqp://guest:guest@localhost:5672",
+				RestartTime:    5 * time.Second,
+			},
 		},
 	}, nil
 }

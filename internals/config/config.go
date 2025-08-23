@@ -1,5 +1,7 @@
 package config
 
+import "time"
+
 type HttpServerConfig struct {
 	Port    string
 	Address string
@@ -14,8 +16,17 @@ type InstrumentationConfig struct {
 	UseHttp  bool
 	URL      string
 }
+type ConsumerConfig struct {
+	Amqp AmqpConsumerConfig
+}
+type AmqpConsumerConfig struct {
+	ConnectionName string
+	URI            string
+	RestartTime    time.Duration
+}
 type Config struct {
 	AppName         string
 	HttpServer      HttpServerConfig
 	Instrumentation InstrumentationConfig
+	Consumer        ConsumerConfig
 }

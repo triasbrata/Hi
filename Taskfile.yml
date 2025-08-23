@@ -5,16 +5,17 @@ tasks:
     dir: cmd/http
     cmds:
       - go build -o ../../http_service ./...
-    # sources:
-    #   - .
-    # generates:
-    #   - ../../http_service
-
   run-http:
     cmds:
+      - task: build-http
       - ./http_service
       - defer: rm ./http_service
-  build-and-run-http:
+  build-consumer:
+    dir: cmd/consumer
     cmds:
-      - task: build-http
-      - task: run-http
+      - go build -o ../../consumer_service ./...
+  run-consumer:
+    cmds:
+      - task: build-consumer
+      - ./consumer_service
+      - defer: rm ./consumer_service
