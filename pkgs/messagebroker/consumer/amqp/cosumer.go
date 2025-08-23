@@ -105,28 +105,16 @@ func (c *csmr) Start(ctx context.Context) error {
 		return nil
 	})
 	for stack := range chanStack {
+		slog.Info("start new consumer", slog.Any("stackQueue", stack.queuName))
+
 		eg.Go(func() error {
-			err := c.buildTopology(gctx, stack)
-			if err != nil && errors.Is(err, amqp091.ErrClosed) {
-				slog.ErrorContext(gctx, "got error when define the topology", slog.Any("err", err))
+			err := c.buildAndConsume(gctx, stack)
+			if err == nil {
+				slog.InfoContext(ctx, fmt.Sprintf("will restart consumer in %s", c.restartTime))
 				time.Sleep(c.restartTime)
-				chanStack <- stack // restart topology and consumer
-				return nil
+				chanStack <- stack
 			}
-			if err != nil {
-				return fmt.Errorf("err chan stack: %w", err)
-			}
-			err = c.startConsuming(gctx, stack)
-			if err != nil && errors.Is(err, amqp091.ErrClosed) {
-				slog.ErrorContext(gctx, "got error when define the topology", slog.Any("err", err))
-				time.Sleep(c.restartTime)
-				chanStack <- stack // restart topology and consumer
-				return nil
-			}
-			if err != nil {
-				return fmt.Errorf("err chan stack: %w", err)
-			}
-			return nil
+			return err
 		})
 	}
 	err := eg.Wait()
@@ -140,11 +128,36 @@ func (c *csmr) Start(ctx context.Context) error {
 	return nil
 }
 
+func (c *csmr) buildAndConsume(gctx context.Context, stack amqpStack) error {
+	err := c.buildTopology(gctx, stack)
+	if err != nil && errors.Is(err, amqp091.ErrClosed) {
+		slog.ErrorContext(gctx, "got error when define the topology", slog.Any("err", err), slog.Any("stackQueue", stack.queuName))
+
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("err chan stack: %w", err)
+	}
+	err = c.startConsuming(gctx, stack)
+	fmt.Printf("err: %v\n", err)
+	if err != nil && (errors.Is(err, amqp091.ErrClosed) || err.Error() == "delivery was closed") {
+		slog.ErrorContext(gctx, "got error when consume", slog.Any("err", err), slog.Any("stackQueue", stack.queuName))
+		return nil
+	}
+
+	if err != nil {
+		return fmt.Errorf("err chan stack: %w", err)
+	}
+	return nil
+}
+
 func (c *csmr) startConsuming(gctx context.Context, stack amqpStack) error {
 	ch, err := c.man.GetCon().Channel()
 	if err != nil {
 		return fmt.Errorf("error when open channel for %s: %w", stack.queuName, err)
 	}
+	defer ch.Close()
+	chNotif := ch.NotifyClose(make(chan *amqp091.Error))
 	err = ch.Qos(int(stack.prefetchCount), 0, false)
 	if err != nil {
 		return fmt.Errorf("error when set qos %s: %w", stack.queuName, err)
@@ -160,51 +173,60 @@ func (c *csmr) startConsuming(gctx context.Context, stack amqpStack) error {
 	if err != nil {
 		return fmt.Errorf("error when try to consume %s: %w", stack.queuName, err)
 	}
-	for msgDelivery := range del {
-		attrs := []any{
-			slog.String("msg", string(msgDelivery.Body)),
-			slog.String("tag", msgDelivery.ConsumerTag),
+	for {
+		select {
+		case err := <-chNotif:
+			return err
+		case msgDelivery, ok := <-del:
+			if !ok {
+				return fmt.Errorf("delivery was closed")
+			}
+			attrs := []any{
+				slog.String("msg", string(msgDelivery.Body)),
+				slog.String("tag", msgDelivery.ConsumerTag),
+			}
+			go c.processMessage(gctx, attrs, stack, msgDelivery)
 		}
-		go func() {
-			ctx := c.ctxPool.Get().(*consumer.CtxConsumer)
-			var errH error
-			defer func() {
-				c.ctxPool.Put(ctx) // release back the context
-				if errH != nil {
-					slog.ErrorContext(gctx, "Failed when consume", append(attrs, slog.Any("err", errH))...)
-				}
-				if errH != nil && !stack.topology.AutoAck.Value() && msgDelivery.Acknowledger != nil {
-					errAck := msgDelivery.Acknowledger.Reject(msgDelivery.DeliveryTag, false)
-					if errAck != nil {
-						slog.ErrorContext(gctx, "Fail to reject", append(attrs, slog.Any("err", errAck))...)
-					}
-					return
-				}
-				if !stack.topology.AutoAck.Value() && msgDelivery.Acknowledger != nil {
-					errAck := msgDelivery.Acknowledger.Ack(msgDelivery.DeliveryTag, false)
-					if errAck != nil {
-						slog.ErrorContext(gctx, "Fail to reject", append(attrs, slog.Any("err", errAck))...)
-					}
-				}
-			}()
-			ctx.Context = gctx
-			ctx.Body = msgDelivery.Body
-			ctx.Header = msgDelivery.Headers
-			for _, fx := range c.globalMiddleware {
-				errH = fx(ctx)
-				if errH != nil {
-					return
-				}
-			}
-			for _, fx := range stack.handlers {
-				errH = fx(ctx)
-				if errH != nil {
-					return
-				}
-			}
-		}()
 	}
-	return nil
+}
+
+func (c *csmr) processMessage(gctx context.Context, attrs []any, stack amqpStack, msgDelivery amqp091.Delivery) {
+	ctx := c.ctxPool.Get().(*consumer.CtxConsumer)
+	var errH error
+	defer func() {
+		c.ctxPool.Put(ctx) // release back the context
+		if errH != nil {
+			slog.ErrorContext(gctx, "Failed when consume", append(attrs, slog.Any("err", errH))...)
+		}
+		if errH != nil && !stack.topology.AutoAck.Value() && msgDelivery.Acknowledger != nil {
+			errAck := msgDelivery.Acknowledger.Reject(msgDelivery.DeliveryTag, false)
+			if errAck != nil {
+				slog.ErrorContext(gctx, "Fail to reject", append(attrs, slog.Any("err", errAck))...)
+			}
+			return
+		}
+		if !stack.topology.AutoAck.Value() && msgDelivery.Acknowledger != nil {
+			errAck := msgDelivery.Acknowledger.Ack(msgDelivery.DeliveryTag, false)
+			if errAck != nil {
+				slog.ErrorContext(gctx, "Fail to reject", append(attrs, slog.Any("err", errAck))...)
+			}
+		}
+	}()
+	ctx.Context = gctx
+	ctx.Body = msgDelivery.Body
+	ctx.Header = msgDelivery.Headers
+	for _, fx := range c.globalMiddleware {
+		errH = fx(ctx)
+		if errH != nil {
+			return
+		}
+	}
+	for _, fx := range stack.handlers {
+		errH = fx(ctx)
+		if errH != nil {
+			return
+		}
+	}
 }
 
 func (c *csmr) buildTopology(gctx context.Context, stack amqpStack) (err error) {
