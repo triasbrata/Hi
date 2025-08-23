@@ -192,39 +192,41 @@ func (c *csmr) startConsuming(gctx context.Context, stack amqpStack) error {
 
 func (c *csmr) processMessage(gctx context.Context, attrs []any, stack amqpStack, msgDelivery amqp091.Delivery) {
 	ctx := c.ctxPool.Get().(*consumer.CtxConsumer)
-	var errH error
-	defer func() {
-		c.ctxPool.Put(ctx) // release back the context
-		if errH != nil {
-			slog.ErrorContext(gctx, "Failed when consume", append(attrs, slog.Any("err", errH))...)
-		}
-		if errH != nil && !stack.topology.AutoAck.Value() && msgDelivery.Acknowledger != nil {
-			errAck := msgDelivery.Acknowledger.Reject(msgDelivery.DeliveryTag, false)
-			if errAck != nil {
-				slog.ErrorContext(gctx, "Fail to reject", append(attrs, slog.Any("err", errAck))...)
-			}
-			return
-		}
-		if !stack.topology.AutoAck.Value() && msgDelivery.Acknowledger != nil {
-			errAck := msgDelivery.Acknowledger.Ack(msgDelivery.DeliveryTag, false)
-			if errAck != nil {
-				slog.ErrorContext(gctx, "Fail to reject", append(attrs, slog.Any("err", errAck))...)
-			}
-		}
-	}()
+	var err error
+	defer c.postProcesMessage(gctx, ctx, err, attrs, stack, msgDelivery)
 	ctx.Context = gctx
 	ctx.Body = msgDelivery.Body
 	ctx.Header = msgDelivery.Headers
 	for _, fx := range c.globalMiddleware {
-		errH = fx(ctx)
-		if errH != nil {
+		err = fx(ctx)
+		if err != nil {
 			return
 		}
 	}
 	for _, fx := range stack.handlers {
-		errH = fx(ctx)
-		if errH != nil {
+		err = fx(ctx)
+		if err != nil {
 			return
+		}
+	}
+}
+
+func (c *csmr) postProcesMessage(gctx context.Context, ctx *consumer.CtxConsumer, errHandler error, attrs []any, stack amqpStack, msgDelivery amqp091.Delivery) {
+	c.ctxPool.Put(ctx) // release back the context
+	if errHandler != nil {
+		slog.ErrorContext(gctx, "Failed when consume", append(attrs, slog.Any("err", errHandler))...)
+	}
+	if errHandler != nil && !stack.topology.AutoAck.Value() && msgDelivery.Acknowledger != nil {
+		errAck := msgDelivery.Acknowledger.Reject(msgDelivery.DeliveryTag, false)
+		if errAck != nil {
+			slog.ErrorContext(gctx, "Fail to reject", append(attrs, slog.Any("err", errAck))...)
+		}
+		return
+	}
+	if !stack.topology.AutoAck.Value() && msgDelivery.Acknowledger != nil {
+		errAck := msgDelivery.Acknowledger.Ack(msgDelivery.DeliveryTag, false)
+		if errAck != nil {
+			slog.ErrorContext(gctx, "Fail to reject", append(attrs, slog.Any("err", errAck))...)
 		}
 	}
 }
