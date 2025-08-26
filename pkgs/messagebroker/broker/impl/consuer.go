@@ -11,6 +11,8 @@ import (
 	"github.com/triasbrata/adios/pkgs/messagebroker/consumer"
 	"github.com/triasbrata/adios/pkgs/messagebroker/consumer/amqp"
 	"github.com/triasbrata/adios/pkgs/messagebroker/manager"
+	"github.com/triasbrata/adios/pkgs/messagebroker/manager/connections"
+	"github.com/triasbrata/adios/pkgs/messagebroker/manager/connections/wrap"
 	implMan "github.com/triasbrata/adios/pkgs/messagebroker/manager/impl"
 	"github.com/triasbrata/adios/pkgs/messagebroker/publisher"
 )
@@ -29,7 +31,7 @@ func (b *brk) Consumer(ctx context.Context, builder broker.ConBuilder) (consumer
 	return nil, fmt.Errorf("Consumer cant open")
 }
 
-func (b *brk) openConsuerAmqp(ctx context.Context, amqp bool) (manager.Manager[*amqp091.Connection], error) {
+func (b *brk) openConsuerAmqp(ctx context.Context, amqp bool) (manager.Manager[connections.ConnectionAMQP], error) {
 	man := implMan.NewManager()
 	conProps := amqp091.NewConnectionProperties()
 	conProps.SetClientConnectionName(b.cfg.amqp.name)
@@ -49,7 +51,7 @@ func (b *brk) openConsuerAmqp(ctx context.Context, amqp bool) (manager.Manager[*
 	return man, nil
 }
 
-func (b *brk) watchConnectionAmqp(ctx context.Context, man manager.Manager[*amqp091.Connection], con *amqp091.Connection, dialConf amqp091.Config) {
+func (b *brk) watchConnectionAmqp(ctx context.Context, man manager.Manager[connections.ConnectionAMQP], con *amqp091.Connection, dialConf amqp091.Config) {
 	var err error
 	for {
 		if con.IsClosed() {
@@ -69,7 +71,7 @@ func (b *brk) watchConnectionAmqp(ctx context.Context, man manager.Manager[*amqp
 			}
 		}
 		closeNotif := con.NotifyClose(make(chan *amqp091.Error))
-		man.SetCon(con)
+		man.SetCon(&wrap.Connection{Connection: con})
 		select {
 		case <-ctx.Done():
 			slog.Info("context Done")

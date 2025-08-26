@@ -11,6 +11,7 @@ import (
 	"github.com/rabbitmq/amqp091-go"
 	"github.com/triasbrata/adios/pkgs/messagebroker/consumer"
 	"github.com/triasbrata/adios/pkgs/messagebroker/manager"
+	"github.com/triasbrata/adios/pkgs/messagebroker/manager/connections"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -22,7 +23,7 @@ type amqpStack struct {
 	handlers      []consumer.ConsumeHandler
 }
 type csmr struct {
-	man              manager.Manager[*amqp091.Connection]
+	man              manager.Manager[connections.ConnectionAMQP]
 	restartTime      time.Duration
 	mut              sync.Mutex
 	stack            []amqpStack
@@ -87,6 +88,11 @@ func (c *csmr) Start(ctx context.Context) error {
 	chanStack := make(chan amqpStack, len(c.stack))
 	eg.Go(func() error {
 		defer close(chanStack)
+		compiledStack := make([]amqpStack, 0, len(c.stack))
+		for _, stack := range c.stack {
+			stack.handlers = append(c.globalMiddleware, stack.handlers...)
+			compiledStack = append(compiledStack, stack)
+		}
 		for range c.man.Ready() {
 			slog.InfoContext(ctx, "connection ready, time to create consumer topology")
 			if len(c.stack) == 0 {
@@ -96,7 +102,8 @@ func (c *csmr) Start(ctx context.Context) error {
 			case c.chanOk <- struct{}{}:
 			default:
 			}
-			for _, stack := range c.stack {
+
+			for _, stack := range compiledStack {
 				slog.InfoContext(ctx, "create consumer topology", slog.Any("stackQueue", stack.queuName))
 				chanStack <- stack
 			}
@@ -191,27 +198,17 @@ func (c *csmr) startConsuming(gctx context.Context, stack amqpStack) error {
 }
 
 func (c *csmr) processMessage(gctx context.Context, attrs []any, stack amqpStack, msgDelivery amqp091.Delivery) {
-	ctx := c.ctxPool.Get().(*consumer.CtxConsumer)
+	consumerCtx := c.ctxPool.Get().(*contextAmqp)
 	var err error
-	defer c.postProcesMessage(gctx, ctx, err, attrs, stack, msgDelivery)
-	ctx.Context = gctx
-	ctx.Body = msgDelivery.Body
-	ctx.Header = msgDelivery.Headers
-	for _, fx := range c.globalMiddleware {
-		err = fx(ctx)
-		if err != nil {
-			return
-		}
-	}
-	for _, fx := range stack.handlers {
-		err = fx(ctx)
-		if err != nil {
-			return
-		}
+	defer c.postProcesMessage(gctx, consumerCtx, err, attrs, stack, msgDelivery)
+	consumerCtx.populateContext(gctx, msgDelivery, stack)
+	err = consumerCtx.Next()
+	if err != nil {
+		return
 	}
 }
 
-func (c *csmr) postProcesMessage(gctx context.Context, ctx *consumer.CtxConsumer, errHandler error, attrs []any, stack amqpStack, msgDelivery amqp091.Delivery) {
+func (c *csmr) postProcesMessage(gctx context.Context, ctx consumer.CtxConsumer, errHandler error, attrs []any, stack amqpStack, msgDelivery amqp091.Delivery) {
 	c.ctxPool.Put(ctx) // release back the context
 	if errHandler != nil {
 		slog.ErrorContext(gctx, "Failed when consume", append(attrs, slog.Any("err", errHandler))...)
@@ -232,7 +229,7 @@ func (c *csmr) postProcesMessage(gctx context.Context, ctx *consumer.CtxConsumer
 }
 
 func (c *csmr) buildTopology(gctx context.Context, stack amqpStack) (err error) {
-	var ch *amqp091.Channel
+	var ch connections.ChannelAMQP
 	ch, err = c.man.GetCon().Channel()
 	if err != nil {
 		return fmt.Errorf("error when open channel buildTopology: %w", err)
@@ -274,7 +271,7 @@ func (c *csmr) buildTopology(gctx context.Context, stack amqpStack) (err error) 
 	return nil
 }
 
-func NewConsumer(conManager manager.Manager[*amqp091.Connection], restartTime time.Duration) consumer.Consumer {
+func NewConsumer(conManager manager.Manager[connections.ConnectionAMQP], restartTime time.Duration) consumer.Consumer {
 	return &csmr{
 		man:              conManager,
 		mut:              sync.Mutex{},
@@ -285,7 +282,7 @@ func NewConsumer(conManager manager.Manager[*amqp091.Connection], restartTime ti
 		chanOk:           make(chan struct{}, 1),
 		ctxPool: sync.Pool{
 			New: func() any {
-				return &consumer.CtxConsumer{}
+				return &contextAmqp{}
 			},
 		},
 	}

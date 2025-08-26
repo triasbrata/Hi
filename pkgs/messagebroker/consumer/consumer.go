@@ -4,16 +4,21 @@ import (
 	"context"
 )
 
-type CtxConsumer struct {
-	Body   []byte
-	Header map[string]interface{}
-	context.Context
+type CtxConsumer interface {
+	UserContext() context.Context
+	SetUserContext(ctx context.Context) context.Context
+	UpdateBody(body []byte)
+	UpdateHeader(key string, value any)
+	Body() []byte
+	Header() map[string]interface{}
+	Next() error
 }
+
 type TopologyConsumer struct {
 	Amqp AmqpTopologyConsumer
 }
 type ConsumerTopology func() TopologyConsumer
-type ConsumeHandler func(c *CtxConsumer) error
+type ConsumeHandler func(c CtxConsumer) error
 type ConsumerBuilder interface {
 	Consume(queueName string, topology ConsumerTopology, handlers ...ConsumeHandler) ConsumerBuilder
 	SimpleConsume(queueName string, handlers ...ConsumeHandler) ConsumerBuilder

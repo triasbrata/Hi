@@ -11,8 +11,8 @@ type handler struct {
 }
 
 // HandleTestConsumer implements consumer.ConsumerHandler.
-func (h *handler) HandleTestConsumer(c *consumer.CtxConsumer) error {
-	fmt.Printf("c.Body: %s\n", c.Body)
+func (h *handler) HandleTestConsumer(c consumer.CtxConsumer) error {
+	fmt.Printf("c.Body: %s\n", c.Body())
 	return nil
 }
 
