@@ -36,7 +36,6 @@ func globalMiddleware(p Param) {
 		otelfiber.WithPropagators(propagation.NewCompositeTextMapPropagator()),
 		otelfiber.WithSpanNameFormatter(func(ctx *fiber.Ctx) string {
 			pattern := ctx.Route().Path
-			fmt.Printf("pattern: %v\n", pattern)
 			if pattern == "" {
 				pattern = ctx.OriginalURL()
 			}

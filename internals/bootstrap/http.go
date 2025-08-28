@@ -5,6 +5,7 @@ import (
 	"github.com/triasbrata/adios/internals/delivery"
 	"github.com/triasbrata/adios/pkgs/instrumentation"
 	"github.com/triasbrata/adios/pkgs/log"
+	"github.com/triasbrata/adios/pkgs/messagebroker"
 	routersfx "github.com/triasbrata/adios/pkgs/routers/fx"
 	"github.com/triasbrata/adios/pkgs/secrets"
 	"github.com/triasbrata/adios/pkgs/server/http"
@@ -28,5 +29,6 @@ func BootHttpServer() fx.Option {
 		),
 		delivery.ModuleHttp(),
 		routersfx.LoadModuleRouter(),
+		messagebroker.LoadMessageBrokerAmqp(),
 		http.LoadHttpServer())
 }

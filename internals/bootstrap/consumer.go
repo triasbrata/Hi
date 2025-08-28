@@ -24,7 +24,7 @@ func BootConsumerAmqp() fx.Option {
 	return fx.Module("bootstrap/BootConsumerAmqp",
 		log.LoadLoggerSlog(),
 		config.LoadConfig(),
-		messagebroker.MessageBrokerAmqp(),
+		messagebroker.LoadMessageBrokerAmqp(),
 		delivery.ModuleConsumer(),
 		fx.Invoke(func(param InvokeParam) {
 			invCtx, cancel := context.WithCancel(context.Background())
