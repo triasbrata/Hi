@@ -7,7 +7,7 @@ import (
 	"go.uber.org/fx"
 )
 
-func MessageBrokerAmqp(cfg ...impl.AmqpConfig) fx.Option {
+func LoadMessageBrokerAmqp(cfg ...impl.AmqpConfig) fx.Option {
 	provider := []fx.Option{}
 	if len(cfg) == 1 {
 		provider = append(provider, fx.Supply(cfg[0], fx.Private))
@@ -24,6 +24,6 @@ func MessageBrokerAmqp(cfg ...impl.AmqpConfig) fx.Option {
 		return impl.CreateNewBroker(impl.WithAmqpBroker(cfg))
 
 	}))
-	return fx.Module("pks/messagebroker", provider...)
+	return fx.Module("pkg/messagebroker", provider...)
 
 }

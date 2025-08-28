@@ -4,12 +4,14 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/rabbitmq/amqp091-go"
 	"github.com/triasbrata/adios/pkgs/messagebroker/manager"
 	"github.com/triasbrata/adios/pkgs/messagebroker/manager/connections"
 	"github.com/triasbrata/adios/pkgs/messagebroker/publisher"
 	"github.com/triasbrata/adios/pkgs/messagebroker/publisher/envelop"
+	"github.com/triasbrata/adios/pkgs/utils"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -46,7 +48,7 @@ func (*ampqPub) safePublish(ctx context.Context, ch connections.ChannelAMQP, err
 	}
 	returnMsg := ch.NotifyReturn(make(chan amqp091.Return, 1))
 	confirm := ch.NotifyPublish(make(chan amqp091.Confirmation, 1))
-	ctx, cancel := context.WithTimeout(ctx, envelopOpt.Timeout)
+	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	eg, gctx := errgroup.WithContext(ctx)
 	eg.Go(func() error {
@@ -62,14 +64,19 @@ func (*ampqPub) safePublish(ctx context.Context, ch connections.ChannelAMQP, err
 		return nil
 	})
 	eg.Go(func() error {
+		//cancel publisher if already timeout
+		defer cancel()
 		select {
-		case <-returnMsg:
-			return fmt.Errorf("publish to %s failed, because returned", envelopOpt.AMQP.Exchange.RoutingKey)
-		case cfrm := <-confirm:
-			if !cfrm.Ack {
+		case msg, ok := <-returnMsg:
+			if ok {
+				return fmt.Errorf("publish to %s failed, because returned", msg.RoutingKey)
+			}
+		case cfrm, ok := <-confirm:
+			if ok && !cfrm.Ack {
 				return fmt.Errorf("publish to %s failed, because nacked", envelopOpt.AMQP.Exchange.RoutingKey)
 			}
-		case <-gctx.Done():
+		case <-time.After(envelopOpt.Timeout):
+			return nil
 		}
 		return nil
 	})
@@ -93,8 +100,9 @@ func (a *ampqPub) PublishToQueue(ctx context.Context, queueName string, Payload 
 		envelop.AMQPEnvelope{
 			Exchange: envelop.AMQPEnvelopeExchange{
 				RoutingKey:   queueName,
-				ExchangeName: amqp091.ExchangeDirect,
+				ExchangeName: "",
 			},
+			Mandatory: utils.OptionBool{HasValue: true, Val: true},
 			Payload: amqp091.Publishing{
 				Headers: Payload.Header,
 				Body:    Payload.Body,

@@ -61,7 +61,9 @@ func (c *contextAmqp) Header() map[string]interface{} {
 
 // Next implements consumer.CtxConsumer.
 func (c *contextAmqp) Next() error {
-	c.ciStackHandler++
+	defer func() {
+		c.ciStackHandler++
+	}()
 	if c.ciStackHandler < c.lenStackHandler {
 		return c.stack.handlers[c.ciStackHandler](c)
 	}

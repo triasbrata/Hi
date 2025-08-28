@@ -16,11 +16,10 @@ import (
 )
 
 type amqpStack struct {
-	queuName      string
-	consumerName  string
-	prefetchCount int64
-	topology      consumer.AmqpTopologyConsumer
-	handlers      []consumer.ConsumeHandler
+	queuName     string
+	consumerName string
+	topology     consumer.AmqpTopologyConsumer
+	handlers     []consumer.ConsumeHandler
 }
 type csmr struct {
 	man              manager.Manager[connections.ConnectionAMQP]
@@ -165,7 +164,7 @@ func (c *csmr) startConsuming(gctx context.Context, stack amqpStack) error {
 	}
 	defer ch.Close()
 	chNotif := ch.NotifyClose(make(chan *amqp091.Error))
-	err = ch.Qos(int(stack.prefetchCount), 0, false)
+	err = ch.Qos(int(stack.topology.PrefetchCount), 0, false)
 	if err != nil {
 		return fmt.Errorf("error when set qos %s: %w", stack.queuName, err)
 	}

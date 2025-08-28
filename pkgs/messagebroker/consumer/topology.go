@@ -6,14 +6,15 @@ import (
 )
 
 type AmqpTopologyConsumer struct {
-	AutoAck      utils.OptionBool
-	Exclusive    utils.OptionBool
-	NoLocal      utils.OptionBool
-	NoWait       utils.OptionBool
-	Durable      utils.OptionBool
-	AutoDelete   utils.OptionBool
-	Args         amqp091.Table
-	BindExchange *AmqpBindExchange
+	AutoAck       utils.OptionBool
+	Exclusive     utils.OptionBool
+	NoLocal       utils.OptionBool
+	NoWait        utils.OptionBool
+	Durable       utils.OptionBool
+	AutoDelete    utils.OptionBool
+	Args          amqp091.Table
+	BindExchange  *AmqpBindExchange
+	PrefetchCount int64
 }
 type AmqpBindExchange struct {
 	NoWait       utils.OptionBool
