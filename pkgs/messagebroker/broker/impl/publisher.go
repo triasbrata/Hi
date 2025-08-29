@@ -3,9 +3,13 @@ package impl
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"github.com/triasbrata/adios/pkgs/messagebroker/broker"
+	"github.com/triasbrata/adios/pkgs/messagebroker/manager"
+	"github.com/triasbrata/adios/pkgs/messagebroker/manager/connections"
 	"github.com/triasbrata/adios/pkgs/messagebroker/publisher/amqp"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/triasbrata/adios/pkgs/messagebroker/publisher"
 )
@@ -18,11 +22,28 @@ func (b *brk) Publisher(ctx context.Context, builder broker.PubBuilder) (publish
 		if b.cfg.amqp == nil {
 			return nil, fmt.Errorf("configuration amqp was not found")
 		}
-		conHolder, err := b.openConnectionAmqp(ctx)
+		conHolders := make([]manager.Manager[connections.ConnectionAMQP], 0, 10)
+		eg := errgroup.Group{}
+		mut := sync.Mutex{}
+		for cid := range 10 {
+			eg.Go(func() error {
+				conHolder, err := b.openConnectionAmqp(ctx, "-pub-", cid)
+				if err != nil {
+					return err
+				}
+				mut.Lock()
+				conHolders = append(conHolders, conHolder)
+				mut.Unlock()
+				return nil
+			})
+
+		}
+		err := eg.Wait()
+
 		if err != nil {
 			return nil, err
 		}
-		return amqp.NewPublisher(conHolder), nil
+		return amqp.NewPublisher(conHolders), nil
 	}
 	return nil, fmt.Errorf("Consumer cant open")
 }

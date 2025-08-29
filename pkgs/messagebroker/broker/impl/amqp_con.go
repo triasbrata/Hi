@@ -13,10 +13,11 @@ import (
 	"github.com/triasbrata/adios/pkgs/messagebroker/manager/impl"
 )
 
-func (b *brk) openConnectionAmqp(ctx context.Context) (manager.Manager[connections.ConnectionAMQP], error) {
+func (b *brk) openConnectionAmqp(ctx context.Context, subfix ...any) (manager.Manager[connections.ConnectionAMQP], error) {
 	man := impl.NewManager()
 	conProps := amqp091.NewConnectionProperties()
-	conProps.SetClientConnectionName(b.cfg.amqp.name)
+	conName := b.cfg.amqp.name + fmt.Sprint(subfix...)
+	conProps.SetClientConnectionName(conName)
 	dialConf := amqp091.Config{
 		Vhost:      b.cfg.amqp.vhost,
 		Properties: conProps,
@@ -57,6 +58,7 @@ func (b *brk) watchConnectionAmqp(ctx context.Context, man manager.Manager[conne
 		select {
 		case <-ctx.Done():
 			slog.Info("context Done")
+			con.Close()
 			return
 		case err := <-closeNotif:
 			slog.ErrorContext(ctx, "connection closed", slog.Any("err", err))
