@@ -35,6 +35,7 @@ func (s *srv) FetchHelloWorld(ctx context.Context, param entities.FetchHelloWorl
 	fmt.Printf("time.Since(start).Milliseconds(): %v\n", time.Since(start).Milliseconds())
 	s.at.Add(1)
 	fmt.Printf("s.at.Load(): %v\n", s.at.Load())
+
 	return res, nil
 }
 
