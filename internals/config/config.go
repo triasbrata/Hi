@@ -10,11 +10,12 @@ type InstrumentationSecureConfig struct {
 	CaFile []byte
 }
 type InstrumentationConfig struct {
-	Secure   InstrumentationSecureConfig
-	Endpoint string
-	UseGRPC  bool
-	UseHttp  bool
-	URL      string
+	Secure       InstrumentationSecureConfig
+	Endpoint     string
+	UseGRPC      bool
+	UseHttp      bool
+	URL          string
+	PyroscopeUrl string
 }
 type ConsumerConfig struct {
 	Amqp AmqpConsumerConfig

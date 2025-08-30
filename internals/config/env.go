@@ -26,9 +26,10 @@ func NewConfigEnv(secret secrets.Secret) (*Config, error) {
 		},
 		AppName: secret.GetSecretAsString("APP_NAME", "hello"),
 		Instrumentation: InstrumentationConfig{
-			Secure:   secInst,
-			Endpoint: secret.GetSecretAsString("INS_ENDPOINT", "localhost:4317"),
-			UseGRPC:  secret.GetSecretAsBool("INS_USE_GRPC", true),
+			Secure:       secInst,
+			Endpoint:     secret.GetSecretAsString("INS_ENDPOINT", "localhost:4317"),
+			UseGRPC:      secret.GetSecretAsBool("INS_USE_GRPC", true),
+			PyroscopeUrl: secret.GetSecretAsString("PYROSCOPE_SERVER_ADDRESS", "http://localhost:4040"),
 		},
 		Consumer: ConsumerConfig{
 			Amqp: AmqpConsumerConfig{

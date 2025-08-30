@@ -1,11 +1,9 @@
 package bootstrap
 
 import (
-	"context"
 	"log"
 	"os"
 	"path/filepath"
-	"runtime"
 	"runtime/pprof"
 
 	"github.com/triasbrata/adios/internals/config"
@@ -13,6 +11,7 @@ import (
 	"github.com/triasbrata/adios/pkgs/instrumentation"
 	plog "github.com/triasbrata/adios/pkgs/log"
 	"github.com/triasbrata/adios/pkgs/messagebroker"
+	"github.com/triasbrata/adios/pkgs/pyroscope"
 	routersfx "github.com/triasbrata/adios/pkgs/routers/fx"
 	"github.com/triasbrata/adios/pkgs/secrets"
 	"github.com/triasbrata/adios/pkgs/server/http"
@@ -37,44 +36,7 @@ func BootHttpServer() fx.Option {
 		delivery.ModuleHttp(),
 		routersfx.LoadModuleRouter(),
 		messagebroker.LoadMessageBrokerAmqp(),
-		fx.Invoke(func(lc fx.Lifecycle) {
-			outDir := "pprof-out"
-			if err := os.MkdirAll(outDir, 0o755); err != nil {
-				log.Fatalf("mkdir %s: %v", outDir, err)
-			}
-
-			// Enable extra profilers early
-			// 1 = sample every blocking event; increase to reduce overhead.
-			runtime.SetBlockProfileRate(1)
-			// 1 = sample every mutex contention event; can use >1 to downsample.
-			runtime.SetMutexProfileFraction(1)
-
-			// Start CPU profile for the whole runtime
-			cpuPath := filepath.Join(outDir, "cpu.pprof")
-			cpuFile, err := os.Create(cpuPath)
-			if err != nil {
-				log.Fatalf("create CPU profile: %v", err)
-			}
-			if err := pprof.StartCPUProfile(cpuFile); err != nil {
-				log.Fatalf("start CPU profile: %v", err)
-			}
-
-			lc.Append(fx.Hook{OnStop: func(ctx context.Context) error {
-				pprof.StopCPUProfile()
-				_ = cpuFile.Close()
-				log.Printf("wrote %s", cpuPath)
-
-				// Force a GC so heap profile reflects up-to-date live objects
-				runtime.GC()
-				// Dump all profiles
-				if err := dumpAllProfiles(outDir); err != nil {
-					log.Printf("dump profiles error: %v", err)
-				}
-
-				return nil
-
-			}})
-		}),
+		pyroscope.LoadPyroscope(),
 		http.LoadHttpServer())
 }
 
