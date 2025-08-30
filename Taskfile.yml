@@ -19,3 +19,16 @@ tasks:
       - task: build-consumer
       - ./consumer_service
       - defer: rm ./consumer_service
+  build-grpc:
+    dir: cmd/grpc
+    cmds:
+      - go build -o ../../grpc_service ./...
+  run-grpc:
+    cmds:
+      - task: build-grpc
+      - ./grpc_service
+      - defer: rm ./grpc_service
+  proto-gen:
+    cmds:
+      - rm -rf gen/proto_go
+      - buf generate

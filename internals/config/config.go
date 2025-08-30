@@ -25,9 +25,15 @@ type AmqpConsumerConfig struct {
 	URI            string
 	RestartTime    time.Duration
 }
+type GrpcServerConfig struct {
+	EnableReflection bool
+	Port             string
+	Address          string
+}
 type Config struct {
 	AppName         string
 	HttpServer      HttpServerConfig
+	GrpcServer      GrpcServerConfig
 	Instrumentation InstrumentationConfig
 	Consumer        ConsumerConfig
 }

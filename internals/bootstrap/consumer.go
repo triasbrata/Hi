@@ -37,9 +37,7 @@ func BootConsumerAmqp() fx.Option {
 					return fmt.Errorf("error when try to consume %w", err)
 				}
 				param.Routing(consumer)
-				go func() {
-					consumer.Start(invCtx)
-				}()
+				go consumer.Start(invCtx)
 				ok, errChan := consumer.Status()
 				select {
 				case err := <-errChan:

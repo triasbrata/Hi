@@ -24,6 +24,10 @@ func NewConfigEnv(secret secrets.Secret) (*Config, error) {
 		HttpServer: HttpServerConfig{
 			Port: secret.GetSecretAsString("HTTP_PORT", "8000"),
 		},
+		GrpcServer: GrpcServerConfig{
+			EnableReflection: true,
+			Port:             secret.GetSecretAsString("HTTP_PORT", "8000"),
+		},
 		AppName: secret.GetSecretAsString("APP_NAME", "hello"),
 		Instrumentation: InstrumentationConfig{
 			Secure:       secInst,
