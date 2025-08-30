@@ -1,5 +1,9 @@
 {
   "yaml.schemas": {
+    "file:///Users/triasbrata/.vscode/extensions/continue.continue-1.2.1-darwin-arm64/config-yaml-schema.json": [
+      ".continue/**/*.yaml"
+    ],
+    "file:///Users/triasbrata/.vscode/extensions/docsmsft.docs-yaml-1.0.5/dist/toc.schema.json": "/toc\\.yml/i",
     "/Users/triasbrata/.vscode/extensions/continue.continue-1.0.19-darwin-arm64/config-yaml-schema.json": [
       ".continue/**/*.yaml"
     ],
