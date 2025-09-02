@@ -21,7 +21,7 @@ type InvokeParam struct {
 }
 
 func BootConsumerAmqp() fx.Option {
-	return fx.Module("bootstrap/BootConsumerAmqp",
+	return fx.Options(
 		log.LoadLoggerSlog(),
 		config.LoadConfig(),
 		messagebroker.LoadMessageBrokerAmqp(),

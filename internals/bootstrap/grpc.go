@@ -13,7 +13,7 @@ import (
 )
 
 func BootGRPC() fx.Option {
-	return fx.Module("bootstrap/BootConsumerAmqp",
+	return fx.Options(
 		log.LoadLoggerSlog(),
 		config.LoadConfig(),
 		instrumentation.OtelModule(
