@@ -6,7 +6,8 @@ import (
 	"github.com/gofiber/contrib/otelfiber/v2"
 	"github.com/gofiber/fiber/v2"
 	"github.com/triasbrata/adios/pkgs/routers"
-	"go.opentelemetry.io/otel/propagation"
+	"github.com/triasbrata/adios/pkgs/server/http"
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/trace"
 
@@ -21,11 +22,12 @@ type Param struct {
 	Handler   Handler
 }
 
-func NewRouter(p Param) error {
-	globalMiddleware(p)
-
-	p.Router.Get("/hello-:word", p.Handler.HelloWorld)
-	return nil
+func NewRouter(p Param) http.RoutingBind {
+	return func() error {
+		globalMiddleware(p)
+		p.Router.Get("/weather", p.Handler.CurrentWether)
+		return nil
+	}
 }
 
 func globalMiddleware(p Param) {
@@ -33,13 +35,12 @@ func globalMiddleware(p Param) {
 		otelfiber.WithCollectClientIP(true),
 		otelfiber.WithTracerProvider(p.TraceProv),
 		otelfiber.WithMeterProvider(p.MeterProv),
-		otelfiber.WithPropagators(propagation.NewCompositeTextMapPropagator()),
+		otelfiber.WithPropagators(otel.GetTextMapPropagator()),
 		otelfiber.WithSpanNameFormatter(func(ctx *fiber.Ctx) string {
 			pattern := ctx.Route().Path
 			if pattern == "" {
 				pattern = ctx.OriginalURL()
 			}
-
 			return fmt.Sprintf("%s %s", ctx.Method(), pattern)
 		}),
 	))

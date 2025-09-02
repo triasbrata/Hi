@@ -1,7 +1,10 @@
 package entities
 
-type FetchHelloWorldParam struct {
+type FetchCurrentWeatherParam struct {
+	Latitude  float32
+	Longitude float32
 }
-type FetchHelloWorldRes struct {
-	MapData map[string][]string
+type FetchCurrentWeatherRes struct {
+	Temperature float32
+	Condition   string
 }

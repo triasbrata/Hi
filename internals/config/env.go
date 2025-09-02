@@ -26,7 +26,7 @@ func NewConfigEnv(secret secrets.Secret) (*Config, error) {
 		},
 		GrpcServer: GrpcServerConfig{
 			EnableReflection: true,
-			Port:             secret.GetSecretAsString("HTTP_PORT", "8000"),
+			Port:             secret.GetSecretAsString("GRPC_PORT", "8001"),
 		},
 		AppName: secret.GetSecretAsString("APP_NAME", "hello"),
 		Instrumentation: InstrumentationConfig{
@@ -34,6 +34,11 @@ func NewConfigEnv(secret secrets.Secret) (*Config, error) {
 			Endpoint:     secret.GetSecretAsString("INS_ENDPOINT", "localhost:4317"),
 			UseGRPC:      secret.GetSecretAsBool("INS_USE_GRPC", true),
 			PyroscopeUrl: secret.GetSecretAsString("PYROSCOPE_SERVER_ADDRESS", "http://localhost:4040"),
+		},
+		GrpcClientServices: GrpcClientServicesConfig{
+			WeatherService: GrpcClientServiceConfig{
+				Target: secret.GetSecretAsString("GRPC_SERVICES_WEATHER_TARGET", "localhost:8001"),
+			},
 		},
 		Consumer: ConsumerConfig{
 			Amqp: AmqpConsumerConfig{

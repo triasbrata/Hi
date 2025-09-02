@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/triasbrata/adios/internals/repositories"
-	"github.com/triasbrata/adios/internals/service/hello/impl"
+	"github.com/triasbrata/adios/internals/service/weather/impl"
 	"github.com/triasbrata/adios/pkgs/messagebroker/broker"
 	"github.com/triasbrata/adios/pkgs/messagebroker/publisher"
 	"go.uber.org/fx"
@@ -13,7 +13,7 @@ import (
 func LoadHelloService() fx.Option {
 	return fx.Module("service/hello",
 		fx.Provide(impl.NewServiceHello),
-		repositories.LoadWordRepository(),
+		repositories.LoadWeatherRepository(),
 		fx.Provide(func(brk broker.Broker, lc fx.Lifecycle) (publisher.Publisher, error) {
 			ctx, cancel := context.WithCancel(context.Background())
 			// hook to lifecycle when app close then close the context

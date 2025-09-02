@@ -21,7 +21,7 @@ func ModuleHttp() fx.Option {
 	return fx.Module("delivery/http",
 		service.LoadHelloService(),
 		fx.Provide(fx.Private, implHttp.NewHandler),
-		fx.Invoke(http.NewRouter),
+		fx.Provide(http.NewRouter),
 	)
 }
 

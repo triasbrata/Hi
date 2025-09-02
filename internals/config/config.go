@@ -30,10 +30,17 @@ type GrpcServerConfig struct {
 	Port             string
 	Address          string
 }
+type GrpcClientServicesConfig struct {
+	WeatherService GrpcClientServiceConfig
+}
+type GrpcClientServiceConfig struct {
+	Target string
+}
 type Config struct {
-	AppName         string
-	HttpServer      HttpServerConfig
-	GrpcServer      GrpcServerConfig
-	Instrumentation InstrumentationConfig
-	Consumer        ConsumerConfig
+	AppName            string
+	HttpServer         HttpServerConfig
+	GrpcServer         GrpcServerConfig
+	Instrumentation    InstrumentationConfig
+	GrpcClientServices GrpcClientServicesConfig
+	Consumer           ConsumerConfig
 }

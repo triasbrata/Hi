@@ -5,7 +5,7 @@ import (
 )
 
 func NewRoutingConsumer(chandler ConsumerHandler, builder cmr.ConsumerBuilder) {
-	builder.Consume("test_consumer", func() cmr.TopologyConsumer {
+	builder.Consume("latest_weather", func() cmr.TopologyConsumer {
 		return cmr.TopologyConsumer{
 			Amqp: cmr.AmqpTopologyConsumer{PrefetchCount: 200},
 		}
