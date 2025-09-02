@@ -7,6 +7,7 @@ import (
 
 	"github.com/triasbrata/adios/internals/config"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/trace"
 	"go.uber.org/fx"
@@ -15,15 +16,16 @@ import (
 )
 
 type GrpcServerBinding func(s *grpc.Server)
+type RoutingBind func() error
 
 func LoadGrpcServer() fx.Option {
 	return fx.Module("pkg/server/grpc",
 		fx.Provide(func(cfg *config.Config, tProvider *trace.TracerProvider, mProvider *metric.MeterProvider) *grpc.Server {
-			fmt.Println("say hello")
 			server := grpc.NewServer(grpc.StatsHandler(
 				otelgrpc.NewServerHandler(
 					otelgrpc.WithTracerProvider(tProvider),
 					otelgrpc.WithMeterProvider(mProvider),
+					otelgrpc.WithPropagators(otel.GetTextMapPropagator()),
 				)))
 			if cfg.GrpcServer.EnableReflection {
 				reflection.Register(server)
@@ -31,7 +33,8 @@ func LoadGrpcServer() fx.Option {
 			return server
 		}), fx.Invoke(func(cfg *config.Config, lc fx.Lifecycle, server *grpc.Server, binder GrpcServerBinding) error {
 			lc.Append(fx.Hook{OnStart: func(ctx context.Context) error {
-				lis, err := net.Listen("tcp", fmt.Sprintf("%s:%s", cfg.GrpcServer.Address, cfg.GrpcServer.Port))
+				address := fmt.Sprintf("%s:%s", cfg.GrpcServer.Address, cfg.GrpcServer.Port)
+				lis, err := net.Listen("tcp", address)
 				if err != nil {
 					return fmt.Errorf("got error when listen to network: %w", err)
 				}

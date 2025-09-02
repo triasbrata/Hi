@@ -16,11 +16,12 @@ import (
 
 type InvokeParam struct {
 	fx.In
-	Lc        fx.Lifecycle
-	App       *fiber.App
-	Cfg       *config.Config
-	TraceProv *trace.TracerProvider
-	MeterProv *metric.MeterProvider
+	Lc         fx.Lifecycle
+	App        *fiber.App
+	Cfg        *config.Config
+	TraceProv  *trace.TracerProvider
+	MeterProv  *metric.MeterProvider
+	RouterBind RoutingBind
 }
 type NewFiberParam struct {
 	fx.In
@@ -28,6 +29,7 @@ type NewFiberParam struct {
 	TraceProv *trace.TracerProvider
 	MeterProv *metric.MeterProvider
 }
+type RoutingBind func() error
 
 func NewFiberServer(p NewFiberParam) *fiber.App {
 	app := fiber.New(fiber.Config{
@@ -43,6 +45,7 @@ func NewFiberServer(p NewFiberParam) *fiber.App {
 func InvokeFiberServer(p InvokeParam) {
 	p.Lc.Append(fx.Hook{
 		OnStart: func(ctx context.Context) error {
+			p.RouterBind()
 			go func() {
 				err := p.App.Listen(fmt.Sprintf("%s:%s", p.Cfg.HttpServer.Address, p.Cfg.HttpServer.Port))
 				if err != nil {
