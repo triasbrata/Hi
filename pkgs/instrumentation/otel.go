@@ -21,9 +21,12 @@ import (
 	"go.opentelemetry.io/otel/sdk/resource"
 	"go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.34.0"
+	otrace "go.opentelemetry.io/otel/trace"
 	"go.uber.org/fx"
 	"google.golang.org/grpc/credentials"
 )
+
+var Tracer otrace.Tracer
 
 type Params struct {
 	fx.In
@@ -255,7 +258,7 @@ func NewTracerProvider(ctx context.Context, cfg *config.Config, res *resource.Re
 		trace.WithBatcher(exporter),
 		trace.WithResource(res),
 	)
-
+	Tracer = provider.Tracer(cfg.AppName)
 	hook := fx.Hook{
 		OnStart: func(context.Context) error {
 			otel.SetTracerProvider(provider)
