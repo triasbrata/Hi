@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/rabbitmq/amqp091-go"
+	"github.com/triasbrata/adios/pkgs/instrumentation"
 	"github.com/triasbrata/adios/pkgs/messagebroker/manager"
 	"github.com/triasbrata/adios/pkgs/messagebroker/manager/connections"
 	"github.com/triasbrata/adios/pkgs/messagebroker/publisher"
@@ -54,12 +55,14 @@ func (a *ampqPub) startCentralPub() {
 }
 
 func (a *ampqPub) consume(evlp cPub, con connections.ConnectionAMQP) {
+	ctx, span := instrumentation.Tracer.Start(evlp.ctx, "pkgs:messagebroker:publisher:amqp:consume")
+	defer span.End()
 	ch, err := con.Channel()
 	if err != nil {
 		evlp.err <- fmt.Errorf("failed when open channel %w", err)
 	}
 	defer ch.Close()
-	evlp.err <- a.safePublish(evlp.ctx, ch, evlp.envelopOpt)
+	evlp.err <- a.safePublish(ctx, ch, evlp.envelopOpt)
 }
 
 // Use implements publisher.Publisher.
@@ -71,6 +74,8 @@ func (a *ampqPub) Use(middleware publisher.PublisherMiddleware) {
 
 // Publish implements publisher.Publisher.
 func (a *ampqPub) Publish(ctx context.Context, envelopOption envelop.EnvelopeOption) error {
+	ctx, span := instrumentation.Tracer.Start(ctx, "pkgs:messagebroker:publisher:amqp:Publish")
+	defer span.End()
 	envelopOpt, err := a.buildEnvelop(ctx, envelopOption)
 	if err != nil {
 		return err
@@ -79,6 +84,8 @@ func (a *ampqPub) Publish(ctx context.Context, envelopOption envelop.EnvelopeOpt
 }
 
 func (a *ampqPub) pickupEnvelop(ctx context.Context, envelopOpt envelop.Envelope) error {
+	ctx, span := instrumentation.Tracer.Start(ctx, "pkgs:messagebroker:publisher:amqp:pickupEnvelop")
+	defer span.End()
 	errChan := make(chan error, 1)
 	defer close(errChan)
 	a.envelopChan <- cPub{
@@ -90,6 +97,8 @@ func (a *ampqPub) pickupEnvelop(ctx context.Context, envelopOpt envelop.Envelope
 }
 
 func (*ampqPub) safePublish(ctx context.Context, ch connections.ChannelAMQP, envelopOpt envelop.Envelope) error {
+	ctx, span := instrumentation.Tracer.Start(ctx, "pkgs:messagebroker:publisher:amqp:safePublish")
+	defer span.End()
 	if err := ch.Confirm(false); err != nil {
 		return fmt.Errorf("got error when change to  confirm mode: %w", err)
 	}
@@ -131,6 +140,8 @@ func (*ampqPub) safePublish(ctx context.Context, ch connections.ChannelAMQP, env
 }
 
 func (a *ampqPub) buildEnvelop(ctx context.Context, envelopOption envelop.EnvelopeOption) (envelop.Envelope, error) {
+	ctx, span := instrumentation.Tracer.Start(ctx, "pkgs:messagebroker:publisher:amqp:buildEnvelop")
+	defer span.End()
 	var err error
 	envelopOpt := envelopOption()
 	for _, mfx := range a.middleware {
@@ -144,6 +155,8 @@ func (a *ampqPub) buildEnvelop(ctx context.Context, envelopOption envelop.Envelo
 
 // PublishToQueue implements publisher.Publisher.
 func (a *ampqPub) PublishToQueue(ctx context.Context, queueName string, Payload publisher.PublishPayload) error {
+	ctx, span := instrumentation.Tracer.Start(ctx, "pkgs:messagebroker:publisher:amqp:PublishToQueue")
+	defer span.End()
 	return a.Publish(ctx, envelop.WithAMQPEnvelope(
 		envelop.AMQPEnvelope{
 			Exchange: envelop.AMQPEnvelopeExchange{
