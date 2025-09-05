@@ -10,7 +10,7 @@ import (
 )
 
 func (h *httpHandler) CurrentWether(c *fiber.Ctx) error {
-	ctx, span := instrumentation.Tracer.Start(c.UserContext(), "internals:delivery:http:impl:CurrentWether")
+	ctx, span := instrumentation.Tracer().Start(c.UserContext(), "internals:delivery:http:impl:CurrentWether")
 	log.Printf("http trace=%s span=%s", span.SpanContext().TraceID().String(), span.SpanContext().SpanID())
 	c.SetUserContext(ctx)
 	defer span.End()

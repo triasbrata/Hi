@@ -8,8 +8,8 @@ import (
 	"github.com/triasbrata/adios/pkgs/routers"
 	"github.com/triasbrata/adios/pkgs/server/http"
 	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/sdk/metric"
-	"go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/trace"
 
 	"go.uber.org/fx"
 )
@@ -17,8 +17,8 @@ import (
 type Param struct {
 	fx.In
 	Router    routers.Router
-	TraceProv *trace.TracerProvider
-	MeterProv *metric.MeterProvider
+	TraceProv trace.TracerProvider
+	MeterProv metric.MeterProvider
 	Handler   Handler
 }
 

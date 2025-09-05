@@ -7,6 +7,7 @@ import (
 	"github.com/triasbrata/adios/internals/service/weather/impl"
 	"github.com/triasbrata/adios/pkgs/messagebroker/broker"
 	"github.com/triasbrata/adios/pkgs/messagebroker/publisher"
+	"github.com/triasbrata/adios/pkgs/middleware"
 	"go.uber.org/fx"
 )
 
@@ -21,7 +22,13 @@ func LoadHelloService() fx.Option {
 				cancel()
 				return nil
 			}})
-			return brk.Publisher(ctx, broker.PublishWithAmqp())
+			publisher, err := brk.Publisher(ctx, broker.PublishWithAmqp())
+			if err != nil {
+				return publisher, err
+
+			}
+			publisher.Use(middleware.OtelPublisherInject())
+			return publisher, nil
 		}),
 	)
 }

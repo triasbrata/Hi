@@ -33,7 +33,7 @@ func NewConfigEnv(secret secrets.Secret) (*Config, error) {
 			Secure:       secInst,
 			Endpoint:     secret.GetSecretAsString("INS_ENDPOINT", "localhost:4317"),
 			UseGRPC:      secret.GetSecretAsBool("INS_USE_GRPC", true),
-			PyroscopeUrl: secret.GetSecretAsString("PYROSCOPE_SERVER_ADDRESS", "http://localhost:4040"),
+			PyroscopeUrl: secret.GetSecretAsString("PYROSCOPE_SERVER_ADDRESS", "http://localhost:9999"),
 		},
 		GrpcClientServices: GrpcClientServicesConfig{
 			WeatherService: GrpcClientServiceConfig{

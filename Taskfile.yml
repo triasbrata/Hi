@@ -6,6 +6,8 @@ tasks:
     cmds:
       - go build -o ../../http_service ./...
   run-http:
+    env:
+      APP_NAME: "http-adios"
     cmds:
       - task: build-http
       - ./http_service
@@ -15,6 +17,8 @@ tasks:
     cmds:
       - go build -o ../../consumer_service ./...
   run-consumer:
+    env:
+      APP_NAME: "consumer-adios"
     cmds:
       - task: build-consumer
       - ./consumer_service
@@ -24,6 +28,8 @@ tasks:
     cmds:
       - go build -o ../../grpc_service ./...
   run-grpc:
+    env:
+      APP_NAME: "grpc-adios"
     cmds:
       - task: build-grpc
       - ./grpc_service

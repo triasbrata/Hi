@@ -5,6 +5,7 @@ import (
 	"github.com/triasbrata/adios/internals/delivery"
 	"github.com/triasbrata/adios/pkgs/instrumentation"
 	"github.com/triasbrata/adios/pkgs/log"
+	"github.com/triasbrata/adios/pkgs/pyroscope"
 	"github.com/triasbrata/adios/pkgs/secrets"
 	pkgGrpc "github.com/triasbrata/adios/pkgs/server/grpc"
 	"go.opentelemetry.io/otel/attribute"
@@ -27,6 +28,7 @@ func BootGRPC() fx.Option {
 			semconv.VCSRepositoryName("olla"),
 		),
 		pkgGrpc.LoadGrpcServer(),
+		pyroscope.LoadPyroscope(),
 		delivery.ModuleGrpc(),
 	)
 }

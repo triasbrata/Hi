@@ -21,7 +21,7 @@ type srv struct {
 
 // FetchCurrentWeather implements hello.HelloService.
 func (s *srv) FetchCurrentWeather(ctx context.Context, param entities.FetchCurrentWeatherParam) (res entities.FetchCurrentWeatherRes, err error) {
-	ctx, span := instrumentation.Tracer.Start(ctx, "internals:service:weather:impl:FetchCurrentWeather")
+	ctx, span := instrumentation.Tracer().Start(ctx, "internals:service:weather:impl:FetchCurrentWeather")
 	defer span.End()
 	currentWether, err := s.repo.GetWeather(ctx, &v1.GetWeatherRequest{
 		Latitude:  param.Latitude,

@@ -16,7 +16,7 @@ type client struct {
 
 // GetWeather implements weather.WeatherServiceRepo.
 func (c *client) GetWeather(ctx context.Context, in *v1.GetWeatherRequest) (*v1.GetWeatherResponse, error) {
-	ctx, span := instrumentation.Tracer.Start(ctx, "internals:repositories:weather:impl:GetWeather")
+	ctx, span := instrumentation.Tracer().Start(ctx, "internals:repositories:weather:impl:GetWeather")
 	log.Printf("GetWeather trace=%s span=%s", span.SpanContext().TraceID().String(), span.SpanContext().SpanID())
 	defer span.End()
 	return c.client.GetWeather(ctx, in)

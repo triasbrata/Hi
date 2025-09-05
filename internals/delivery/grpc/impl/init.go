@@ -16,7 +16,7 @@ type weatherHandler struct {
 
 // GetWeather implements v1.WeatherServiceServer.
 func (w *weatherHandler) GetWeather(ctx context.Context, req *v1.GetWeatherRequest) (*v1.GetWeatherResponse, error) {
-	ctx, span := instrumentation.Tracer.Start(ctx, "internals:delivery:grpc:impl:GetWeather")
+	ctx, span := instrumentation.Tracer().Start(ctx, "internals:delivery:grpc:impl:GetWeather")
 	defer span.End()
 	log.Printf("grpc trace=%s span=%s", span.SpanContext().TraceID().String(), span.SpanContext().SpanID())
 	r := rand.Int31n(2)
