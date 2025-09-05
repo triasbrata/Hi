@@ -13,6 +13,12 @@ type contextAmqp struct {
 	stack           *amqpStack
 	ciStackHandler  int64
 	lenStackHandler int64
+	routeKey        string
+}
+
+// Route implements consumer.CtxConsumer.
+func (c *contextAmqp) Route() string {
+	return c.routeKey
 }
 
 // SetUserContext implements consumer.CtxConsumer.
@@ -37,15 +43,24 @@ func (c *contextAmqp) UserContext() context.Context {
 }
 
 func (c *contextAmqp) populateContext(ctx context.Context, msgDelivery amqp091.Delivery, stack amqpStack) {
-	header := make(map[string]any)
-	if len(msgDelivery.Headers) == 0 {
-		header = msgDelivery.Headers
+
+	header := make(map[string]interface{}, len(msgDelivery.Headers))
+
+	for k, v := range msgDelivery.Headers {
+		header[k] = v
 	}
+	routeName := ""
+	if stack.topology.BindExchange != nil {
+		routeName = stack.topology.BindExchange.ExchangeName + "-"
+	}
+	routeName += stack.queueName
+
 	c.body = msgDelivery.Body
 	c.header = header
 	c.stack = &stack
 	c.ctx = ctx
 	c.ciStackHandler = 0
+	c.routeKey = routeName
 	c.lenStackHandler = int64(len(stack.handlers))
 }
 
@@ -61,11 +76,9 @@ func (c *contextAmqp) Header() map[string]interface{} {
 
 // Next implements consumer.CtxConsumer.
 func (c *contextAmqp) Next() error {
-	defer func() {
-		c.ciStackHandler++
-	}()
-	if c.ciStackHandler < c.lenStackHandler {
-		return c.stack.handlers[c.ciStackHandler](c)
+	c.ciStackHandler++
+	if c.ciStackHandler <= c.lenStackHandler {
+		return c.stack.handlers[c.ciStackHandler-1](c)
 	}
 	return nil
 }

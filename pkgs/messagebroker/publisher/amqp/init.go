@@ -14,6 +14,7 @@ import (
 	"github.com/triasbrata/adios/pkgs/messagebroker/publisher"
 	"github.com/triasbrata/adios/pkgs/messagebroker/publisher/envelop"
 	"github.com/triasbrata/adios/pkgs/utils"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -55,7 +56,7 @@ func (a *ampqPub) startCentralPub() {
 }
 
 func (a *ampqPub) consume(evlp cPub, con connections.ConnectionAMQP) {
-	ctx, span := instrumentation.Tracer.Start(evlp.ctx, "pkgs:messagebroker:publisher:amqp:consume")
+	ctx, span := instrumentation.Tracer().Start(evlp.ctx, "pkgs:messagebroker:publisher:amqp:consume")
 	defer span.End()
 	ch, err := con.Channel()
 	if err != nil {
@@ -74,7 +75,7 @@ func (a *ampqPub) Use(middleware publisher.PublisherMiddleware) {
 
 // Publish implements publisher.Publisher.
 func (a *ampqPub) Publish(ctx context.Context, envelopOption envelop.EnvelopeOption) error {
-	ctx, span := instrumentation.Tracer.Start(ctx, "pkgs:messagebroker:publisher:amqp:Publish")
+	ctx, span := instrumentation.Tracer().Start(ctx, "pkgs:messagebroker:publisher:amqp:Publish", trace.WithSpanKind(trace.SpanKindProducer))
 	defer span.End()
 	envelopOpt, err := a.buildEnvelop(ctx, envelopOption)
 	if err != nil {
@@ -84,8 +85,8 @@ func (a *ampqPub) Publish(ctx context.Context, envelopOption envelop.EnvelopeOpt
 }
 
 func (a *ampqPub) pickupEnvelop(ctx context.Context, envelopOpt envelop.Envelope) error {
-	ctx, span := instrumentation.Tracer.Start(ctx, "pkgs:messagebroker:publisher:amqp:pickupEnvelop")
-	defer span.End()
+	// ctx, span := instrumentation.Tracer().Start(ctx, "pkgs:messagebroker:publisher:amqp:pickupEnvelop")
+	// defer span.End()
 	errChan := make(chan error, 1)
 	defer close(errChan)
 	a.envelopChan <- cPub{
@@ -97,8 +98,8 @@ func (a *ampqPub) pickupEnvelop(ctx context.Context, envelopOpt envelop.Envelope
 }
 
 func (*ampqPub) safePublish(ctx context.Context, ch connections.ChannelAMQP, envelopOpt envelop.Envelope) error {
-	ctx, span := instrumentation.Tracer.Start(ctx, "pkgs:messagebroker:publisher:amqp:safePublish")
-	defer span.End()
+	// ctx, span := instrumentation.Tracer().Start(ctx, "pkgs:messagebroker:publisher:amqp:safePublish")
+	// defer span.End()
 	if err := ch.Confirm(false); err != nil {
 		return fmt.Errorf("got error when change to  confirm mode: %w", err)
 	}
@@ -113,7 +114,10 @@ func (*ampqPub) safePublish(ctx context.Context, ch connections.ChannelAMQP, env
 			envelopOpt.AMQP.Exchange.RoutingKey,
 			envelopOpt.AMQP.Mandatory.Value(),
 			false,
-			envelopOpt.AMQP.Payload)
+			amqp091.Publishing{
+				Headers: envelopOpt.AMQP.Payload.Headers,
+				Body:    envelopOpt.AMQP.Payload.Body,
+			})
 		if err != nil {
 			return err
 		}
@@ -140,12 +144,12 @@ func (*ampqPub) safePublish(ctx context.Context, ch connections.ChannelAMQP, env
 }
 
 func (a *ampqPub) buildEnvelop(ctx context.Context, envelopOption envelop.EnvelopeOption) (envelop.Envelope, error) {
-	ctx, span := instrumentation.Tracer.Start(ctx, "pkgs:messagebroker:publisher:amqp:buildEnvelop")
-	defer span.End()
+	// ctx, span := instrumentation.Tracer().Start(ctx, "pkgs:messagebroker:publisher:amqp:buildEnvelop")
+	// defer span.End()
 	var err error
 	envelopOpt := envelopOption()
 	for _, mfx := range a.middleware {
-		err, envelopOpt = mfx(ctx, envelopOpt)
+		envelopOpt, err = mfx(ctx, envelopOpt)
 		if err != nil {
 			return envelop.Envelope{}, fmt.Errorf("got error when build envelop from middleware: %w", err)
 		}
@@ -155,7 +159,7 @@ func (a *ampqPub) buildEnvelop(ctx context.Context, envelopOption envelop.Envelo
 
 // PublishToQueue implements publisher.Publisher.
 func (a *ampqPub) PublishToQueue(ctx context.Context, queueName string, Payload publisher.PublishPayload) error {
-	ctx, span := instrumentation.Tracer.Start(ctx, "pkgs:messagebroker:publisher:amqp:PublishToQueue")
+	ctx, span := instrumentation.Tracer().Start(ctx, "pkgs:messagebroker:publisher:amqp:PublishToQueue")
 	defer span.End()
 	return a.Publish(ctx, envelop.WithAMQPEnvelope(
 		envelop.AMQPEnvelope{

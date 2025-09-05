@@ -16,7 +16,7 @@ import (
 )
 
 type amqpStack struct {
-	queuName     string
+	queueName    string
 	consumerName string
 	topology     consumer.AmqpTopologyConsumer
 	handlers     []consumer.ConsumeHandler
@@ -46,9 +46,9 @@ func (c *csmr) Consume(queueName string, topology consumer.ConsumerTopology, han
 		return c
 	}
 	c.stack = append(c.stack, amqpStack{
-		queuName: queueName,
-		topology: topology().Amqp,
-		handlers: handlers,
+		queueName: queueName,
+		topology:  topology().Amqp,
+		handlers:  handlers,
 	})
 
 	return c
@@ -63,9 +63,9 @@ func (c *csmr) SimpleConsume(queueName string, handlers ...consumer.ConsumeHandl
 		return c
 	}
 	c.stack = append(c.stack, amqpStack{
-		queuName: queueName,
-		topology: consumer.AmqpTopologyConsumer{},
-		handlers: handlers,
+		queueName: queueName,
+		topology:  consumer.AmqpTopologyConsumer{},
+		handlers:  handlers,
 	})
 	return c
 }
@@ -79,7 +79,7 @@ func (c *csmr) Use(handlers ...consumer.ConsumeHandler) consumer.ConsumerBuilder
 		return c
 	}
 
-	c.globalMiddleware = append(c.globalMiddleware, c.globalMiddleware...)
+	c.globalMiddleware = append(c.globalMiddleware, handlers...)
 	return c
 }
 func (c *csmr) Start(ctx context.Context) error {
@@ -90,6 +90,7 @@ func (c *csmr) Start(ctx context.Context) error {
 		compiledStack := make([]amqpStack, 0, len(c.stack))
 		for _, stack := range c.stack {
 			stack.handlers = append(c.globalMiddleware, stack.handlers...)
+			fmt.Printf("stack.handlers: %v\n", stack.handlers)
 			compiledStack = append(compiledStack, stack)
 		}
 		for range c.man.Ready() {
@@ -103,7 +104,7 @@ func (c *csmr) Start(ctx context.Context) error {
 			}
 
 			for _, stack := range compiledStack {
-				slog.InfoContext(ctx, "create consumer topology", slog.Any("stackQueue", stack.queuName))
+				slog.InfoContext(ctx, "create consumer topology", slog.Any("stackQueue", stack.queueName))
 				chanStack <- stack
 			}
 
@@ -111,7 +112,7 @@ func (c *csmr) Start(ctx context.Context) error {
 		return nil
 	})
 	for stack := range chanStack {
-		slog.Info("start new consumer", slog.Any("stackQueue", stack.queuName))
+		slog.Info("start new consumer", slog.Any("stackQueue", stack.queueName))
 
 		eg.Go(func() error {
 			err := c.buildAndConsume(gctx, stack)
@@ -137,7 +138,7 @@ func (c *csmr) Start(ctx context.Context) error {
 func (c *csmr) buildAndConsume(gctx context.Context, stack amqpStack) error {
 	err := c.buildTopology(gctx, stack)
 	if err != nil && errors.Is(err, amqp091.ErrClosed) {
-		slog.ErrorContext(gctx, "got error when define the topology", slog.Any("err", err), slog.Any("stackQueue", stack.queuName))
+		slog.ErrorContext(gctx, "got error when define the topology", slog.Any("err", err), slog.Any("stackQueue", stack.queueName))
 
 		return nil
 	}
@@ -147,7 +148,7 @@ func (c *csmr) buildAndConsume(gctx context.Context, stack amqpStack) error {
 	err = c.startConsuming(gctx, stack)
 	fmt.Printf("err: %v\n", err)
 	if err != nil && (errors.Is(err, amqp091.ErrClosed) || err.Error() == "delivery was closed") {
-		slog.ErrorContext(gctx, "got error when consume", slog.Any("err", err), slog.Any("stackQueue", stack.queuName))
+		slog.ErrorContext(gctx, "got error when consume", slog.Any("err", err), slog.Any("stackQueue", stack.queueName))
 		return nil
 	}
 
@@ -160,16 +161,16 @@ func (c *csmr) buildAndConsume(gctx context.Context, stack amqpStack) error {
 func (c *csmr) startConsuming(gctx context.Context, stack amqpStack) error {
 	ch, err := c.man.GetCon().Channel()
 	if err != nil {
-		return fmt.Errorf("error when open channel for %s: %w", stack.queuName, err)
+		return fmt.Errorf("error when open channel for %s: %w", stack.queueName, err)
 	}
 	defer ch.Close()
 	chNotif := ch.NotifyClose(make(chan *amqp091.Error))
 	err = ch.Qos(int(stack.topology.PrefetchCount), 0, false)
 	if err != nil {
-		return fmt.Errorf("error when set qos %s: %w", stack.queuName, err)
+		return fmt.Errorf("error when set qos %s: %w", stack.queueName, err)
 	}
 	del, err := ch.ConsumeWithContext(gctx,
-		stack.queuName,
+		stack.queueName,
 		stack.consumerName,
 		stack.topology.AutoAck.Value(),
 		stack.topology.Exclusive.Value(),
@@ -177,7 +178,7 @@ func (c *csmr) startConsuming(gctx context.Context, stack amqpStack) error {
 		stack.topology.NoWait.Value(),
 		stack.topology.Args)
 	if err != nil {
-		return fmt.Errorf("error when try to consume %s: %w", stack.queuName, err)
+		return fmt.Errorf("error when try to consume %s: %w", stack.queueName, err)
 	}
 	for {
 		select {
@@ -201,6 +202,7 @@ func (c *csmr) processMessage(gctx context.Context, attrs []any, stack amqpStack
 	var err error
 	defer c.postProcesMessage(gctx, consumerCtx, err, attrs, stack, msgDelivery)
 	consumerCtx.populateContext(gctx, msgDelivery, stack)
+	fmt.Printf("consumerCtx: %+v\n", consumerCtx)
 	err = consumerCtx.Next()
 	if err != nil {
 		return
@@ -235,14 +237,14 @@ func (c *csmr) buildTopology(gctx context.Context, stack amqpStack) (err error) 
 	}
 	defer ch.Close()
 
-	_, err = ch.QueueDeclare(stack.queuName,
+	_, err = ch.QueueDeclare(stack.queueName,
 		stack.topology.Durable.Value(),
 		stack.topology.AutoDelete.Value(),
 		stack.topology.Exclusive.Value(),
 		stack.topology.NoWait.Value(),
 		stack.topology.Args)
 	if err != nil {
-		return fmt.Errorf("error when QueueDeclare for %s: %w", stack.queuName, err)
+		return fmt.Errorf("error when QueueDeclare for %s: %w", stack.queueName, err)
 	}
 	if stack.topology.BindExchange != nil {
 		if stack.topology.BindExchange.Exchange != nil {
@@ -255,16 +257,16 @@ func (c *csmr) buildTopology(gctx context.Context, stack amqpStack) (err error) 
 				stack.topology.BindExchange.NoWait.Value(),
 				stack.topology.BindExchange.Exchange.Args)
 			if err != nil {
-				return fmt.Errorf("error when ExchangeDeclare for %s: %w", stack.queuName, err)
+				return fmt.Errorf("error when ExchangeDeclare for %s: %w", stack.queueName, err)
 			}
 		}
-		err = ch.QueueBind(stack.queuName,
+		err = ch.QueueBind(stack.queueName,
 			stack.topology.BindExchange.RoutingKey,
 			stack.topology.BindExchange.ExchangeName,
 			stack.topology.BindExchange.NoWait.Value(),
 			stack.topology.BindExchange.Args)
 		if err != nil {
-			return fmt.Errorf("error when QueueBind for %s: %w", stack.queuName, err)
+			return fmt.Errorf("error when QueueBind for %s: %w", stack.queueName, err)
 		}
 	}
 	return nil

@@ -1,6 +1,7 @@
 package envelop
 
 import (
+	"reflect"
 	"time"
 
 	"github.com/rabbitmq/amqp091-go"
@@ -9,7 +10,7 @@ import (
 
 type EnvelopeOption func() Envelope
 type Envelope struct {
-	AMQP    AMQPEnvelope
+	AMQP    *AMQPEnvelope
 	Timeout time.Duration
 }
 type AMQPEnvelope struct {
@@ -28,8 +29,11 @@ func WithAMQPEnvelope(envelope AMQPEnvelope, timeout ...time.Duration) EnvelopeO
 		if len(timeout) == 1 {
 			tOut = timeout[0]
 		}
+		if reflect.ValueOf(envelope.Payload.Headers).IsNil() == true {
+			envelope.Payload.Headers = make(amqp091.Table)
+		}
 		return Envelope{
-			AMQP:    envelope,
+			AMQP:    &envelope,
 			Timeout: tOut,
 		}
 	}

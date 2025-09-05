@@ -8,9 +8,12 @@ import (
 
 	"github.com/bytedance/sonic"
 	"github.com/gofiber/fiber/v2"
+	"github.com/grafana/pyroscope-go"
 	"github.com/triasbrata/adios/internals/config"
-	"go.opentelemetry.io/otel/sdk/metric"
-	"go.opentelemetry.io/otel/sdk/trace"
+	"github.com/triasbrata/adios/pkgs/instrumentation"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/fx"
 )
 
@@ -19,15 +22,16 @@ type InvokeParam struct {
 	Lc         fx.Lifecycle
 	App        *fiber.App
 	Cfg        *config.Config
-	TraceProv  *trace.TracerProvider
-	MeterProv  *metric.MeterProvider
+	TraceProv  trace.TracerProvider
+	MeterProv  metric.MeterProvider
 	RouterBind RoutingBind
+	Pyroscope  *pyroscope.Profiler
 }
 type NewFiberParam struct {
 	fx.In
 	Cfg       *config.Config
-	TraceProv *trace.TracerProvider
-	MeterProv *metric.MeterProvider
+	TraceProv trace.TracerProvider
+	MeterProv metric.MeterProvider
 }
 type RoutingBind func() error
 
@@ -43,6 +47,9 @@ func NewFiberServer(p NewFiberParam) *fiber.App {
 	return app
 }
 func InvokeFiberServer(p InvokeParam) {
+	otel.SetTracerProvider(p.TraceProv)
+	otel.SetMeterProvider(p.MeterProv)
+	instrumentation.SetTrace(p.TraceProv.Tracer(p.Cfg.AppName))
 	p.Lc.Append(fx.Hook{
 		OnStart: func(ctx context.Context) error {
 			p.RouterBind()
@@ -60,6 +67,9 @@ func InvokeFiberServer(p InvokeParam) {
 			return p.App.ShutdownWithContext(ctx)
 		},
 	})
+	p.Lc.Append(fx.StopHook(func(ctx context.Context) error {
+		return p.Pyroscope.Stop()
+	}))
 }
 func LoadHttpServer() fx.Option {
 	return fx.Module("bootstrap/http",

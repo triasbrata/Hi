@@ -9,6 +9,7 @@ import (
 	"reflect"
 
 	"github.com/go-logr/logr"
+	otelpyroscope "github.com/grafana/otel-profiling-go"
 	"github.com/triasbrata/adios/internals/config"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -17,16 +18,25 @@ import (
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
+	ometric "go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
 	"go.opentelemetry.io/otel/sdk/trace"
-	semconv "go.opentelemetry.io/otel/semconv/v1.34.0"
+	semconv "go.opentelemetry.io/otel/semconv/v1.37.0"
 	otrace "go.opentelemetry.io/otel/trace"
 	"go.uber.org/fx"
 	"google.golang.org/grpc/credentials"
 )
 
-var Tracer otrace.Tracer
+var gTracer otrace.Tracer
+
+func SetTrace(tracer otrace.Tracer) {
+	gTracer = tracer
+}
+func Tracer() otrace.Tracer {
+	return gTracer
+}
 
 type Params struct {
 	fx.In
@@ -37,8 +47,8 @@ type Params struct {
 }
 type InstrumentationResult struct {
 	fx.Out
-	TraceProv *trace.TracerProvider
-	MeterProv *metric.MeterProvider
+	TraceProv otrace.TracerProvider
+	MeterProv ometric.MeterProvider
 }
 type InstrumentationIn interface {
 	Resource() []attribute.KeyValue
@@ -111,6 +121,7 @@ func OtelModule(factory ...interface{}) fx.Option {
 
 func NewInstrumentation(p Params) (InstrumentationResult, error) {
 	otel.SetLogger(logr.FromSlogHandler(p.Logger.Handler()))
+	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{}))
 	attrs := []attribute.KeyValue{semconv.ServiceName(p.Cfg.AppName)}
 	for _, res := range p.ResourceIn {
 		attrs = append(attrs, res.Resource()...)
@@ -122,12 +133,17 @@ func NewInstrumentation(p Params) (InstrumentationResult, error) {
 	if err != nil {
 		return InstrumentationResult{}, fmt.Errorf("cant create otel resource because: %w", err)
 	}
-	hTracer, err := NewTracerProvider(context.Background(), p.Cfg, res)
+	ctx, cancel := context.WithCancel(context.Background())
+	p.Lc.Append(fx.StopHook(func(_ context.Context) error {
+		cancel()
+		return nil
+	}))
+	hTracer, err := NewTracerProvider(ctx, p.Cfg, res)
 	if err != nil {
 		return InstrumentationResult{}, err
 	}
 	p.Lc.Append(hTracer.Hook)
-	hMeter, err := NewMeterProvider(context.Background(), p.Cfg, res)
+	hMeter, err := NewMeterProvider(ctx, p.Cfg, res)
 	if err != nil {
 		return InstrumentationResult{}, err
 	}
@@ -139,12 +155,12 @@ func NewInstrumentation(p Params) (InstrumentationResult, error) {
 }
 
 type HookMeterResult struct {
-	Provider *metric.MeterProvider
+	Provider ometric.MeterProvider
 	Hook     fx.Hook
 }
 
 type HookTracerResult struct {
-	Provider *trace.TracerProvider
+	Provider otrace.TracerProvider
 	Hook     fx.Hook
 }
 
@@ -197,15 +213,10 @@ func NewMeterProvider(ctx context.Context, cfg *config.Config, res *resource.Res
 	)
 
 	hook := fx.Hook{
-		OnStart: func(context.Context) error {
-			otel.SetMeterProvider(provider)
-			return nil
-		},
 		OnStop: func(ctx context.Context) error {
 			return provider.Shutdown(ctx)
 		},
 	}
-
 	return HookMeterResult{
 		Provider: provider,
 		Hook:     hook,
@@ -254,18 +265,17 @@ func NewTracerProvider(ctx context.Context, cfg *config.Config, res *resource.Re
 		return HookTracerResult{}, fmt.Errorf("can't create otel trace exporter: %w", err)
 	}
 
-	provider := trace.NewTracerProvider(
+	oProvider := trace.NewTracerProvider(
 		trace.WithBatcher(exporter),
+		trace.WithSampler(trace.AlwaysSample()),
 		trace.WithResource(res),
 	)
-	Tracer = provider.Tracer(cfg.AppName)
+
+	provider := otelpyroscope.NewTracerProvider(oProvider)
+
 	hook := fx.Hook{
-		OnStart: func(context.Context) error {
-			otel.SetTracerProvider(provider)
-			return nil
-		},
 		OnStop: func(ctx context.Context) error {
-			return provider.Shutdown(ctx)
+			return oProvider.Shutdown(ctx)
 		},
 	}
 

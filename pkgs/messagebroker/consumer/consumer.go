@@ -5,6 +5,7 @@ import (
 )
 
 type CtxConsumer interface {
+	Route() string
 	UserContext() context.Context
 	SetUserContext(ctx context.Context) context.Context
 	UpdateBody(body []byte)
