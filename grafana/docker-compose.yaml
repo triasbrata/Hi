@@ -1,0 +1,23 @@
+services:
+  alloy:
+    image: grafana/alloy:latest
+    ports:
+      - "12345:12345"
+      - "4317:4317"
+      - "4318:4318"
+      - "9999:9999"
+    volumes:
+      - ./config.alloy:/etc/alloy/config.alloy
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - GRAFANA_CLOUD_OTLP_ENDPOINT=${GRAFANA_CLOUD_OTLP_ENDPOINT}
+      - GRAFANA_CLOUD_INSTANCE_ID=${GRAFANA_CLOUD_INSTANCE_ID}
+      - GRAFANA_CLOUD_API_KEY=${GRAFANA_CLOUD_API_KEY}
+      - PYROSCOPE_URL=${PYROSCOPE_URL}
+      - PYROSCOPE_USERNAME=${GRAFANA_CLOUD_INSTANCE_ID}
+      - PYROSCOPE_PASSWORD=${GRAFANA_CLOUD_API_KEY}
+    command:
+      - run
+      - --server.http.listen-addr=0.0.0.0:12345
+      - --storage.path=/var/lib/alloy/data
+      - /etc/alloy/config.alloy
